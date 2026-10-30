@@ -7,12 +7,15 @@ public struct HTTPRequest: Sendable, Equatable {
     public var url: URL
     public var headers: [String: String]
     public var body: Data?
+    /// How long this one request may take; nil means the transport's own default.
+    public var timeout: TimeInterval?
 
-    public init(method: String = "GET", url: URL, headers: [String: String] = [:], body: Data? = nil) {
+    public init(method: String = "GET", url: URL, headers: [String: String] = [:], body: Data? = nil, timeout: TimeInterval? = nil) {
         self.method = method
         self.url = url
         self.headers = headers
         self.body = body
+        self.timeout = timeout
     }
 
     public func json(_ value: JSONValue) -> HTTPRequest {
@@ -69,6 +72,9 @@ public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = request.method
         urlRequest.httpBody = request.body
+        if let timeout = request.timeout {
+            urlRequest.timeoutInterval = timeout
+        }
         for (name, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: name)
         }

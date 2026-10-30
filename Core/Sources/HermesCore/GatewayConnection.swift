@@ -76,7 +76,7 @@ public actor GatewayConnection {
 
         sessionAuthority = readiness.sessionAuthority
         // Without this the dashboard fails approvals at once instead of asking this client.
-        try? await transmit(
+        await transmit(
             RPCRequest(id: nextCallID(), method: "client.capabilities", params: ["server_requests": true]).frame
         )
         if readiness.heartbeat {
@@ -104,11 +104,11 @@ public actor GatewayConnection {
     }
 
     public func respond(to request: ServerRequest, result: JSONValue = .object([:])) async {
-        try? await transmit(Frame.answer(id: request.id, result: result))
+        await transmit(Frame.answer(id: request.id, result: result))
     }
 
     public func refuse(_ request: ServerRequest, reason: String) async {
-        try? await transmit(Frame.answer(id: request.id, error: reason))
+        await transmit(Frame.answer(id: request.id, error: reason))
     }
 
     public func close() {

@@ -21,6 +21,8 @@ final class ConnectionModel {
     }
 
     private(set) var phase: Phase = .idle
+    /// True when the address is on the tailnet and this Mac has no tailnet route.
+    private(set) var needsTailscale = false
     private var task: Task<Void, Never>?
 
     var endpoint: Endpoint? { Endpoint(address: address) }
@@ -35,6 +37,12 @@ final class ConnectionModel {
         task = Task { await connect(to: endpoint) }
     }
 
+    /// Opens the Tailscale app so the person can turn the tailnet on.
+    func openTailscale() {
+        let app = URL(fileURLWithPath: "/Applications/Tailscale.app")
+        NSWorkspace.shared.openApplication(at: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
     func cancel() {
         task?.cancel()
         task = nil
@@ -43,6 +51,25 @@ final class ConnectionModel {
 
     private func connect(to endpoint: Endpoint) async {
         phase = .checking
+        needsTailscale = false
+
+        // A dashboard published only on the tailnet has no route while Tailscale is off, and a
+        // request would hang for its whole timeout. Say that at once instead.
+        let host = endpoint.base.host
+        let refusal = await Task.detached { () -> ConnectRefusal? in
+            guard let host else { return nil }
+            return ConnectPreflight.refusal(
+                host: host,
+                addresses: Tailnet.resolvedAddresses(of: host),
+                tailnetUp: Tailnet.isUp()
+            )
+        }.value
+        if let refusal {
+            needsTailscale = true
+            phase = .failed(refusal.message)
+            return
+        }
+
         let client = DashboardClient(endpoint: endpoint)
         do {
             let status = try await client.status()

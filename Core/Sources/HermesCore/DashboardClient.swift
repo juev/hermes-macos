@@ -61,7 +61,9 @@ public struct DashboardClient: Sendable {
 
     /// `/api/status`, sent without a token: a dashboard has to say whether it wants one.
     public func status() async throws -> ServerStatus {
-        let response = try await transport.send(HTTPRequest(url: endpoint.url("api/status")))
+        let response = try await transport.send(
+            HTTPRequest(url: endpoint.url("api/status"), timeout: 10)
+        )
         return try json(response, as: ServerStatus.init)
     }
 

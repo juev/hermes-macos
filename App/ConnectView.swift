@@ -99,10 +99,17 @@ struct ConnectView: View {
             }
             .font(.caption)
         case .failed(let message):
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.red)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.needsTailscale {
+                    Button("Open Tailscale") { model.openTailscale() }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
+            }
         }
     }
 
