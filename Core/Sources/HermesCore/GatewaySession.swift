@@ -83,10 +83,32 @@ public actor GatewaySession {
         setState(.stopped)
     }
 
-    /// Calls a method on the connection under way; it is an error to call before the socket is ready.
+    /// Calls a method on the connection under way. A chat opened while the socket is still coming up
+    /// waits for it instead of failing at once: the window starts the socket and opens a chat in the
+    /// same breath, and the order of those two is not something a person should be able to feel.
     public func call(_ method: String, params: [String: JSONValue] = [:], timeout: Duration = .seconds(30)) async throws -> JSONValue {
-        guard let connection else { throw GatewayError.notConnected }
+        let connection = try await ready(timeout: .seconds(20))
         return try await connection.call(method, params: params, timeout: timeout)
+    }
+
+    /// The connection that is up, waiting for it if the session is still connecting.
+    private func ready(timeout: Duration) async throws -> GatewayConnection {
+        let deadline = ContinuousClock.now + timeout
+        while true {
+            if case .ready = state, let connection { return connection }
+            switch state {
+            case .stopped, .idle where !wanted:
+                throw GatewayError.notConnected
+            case .failed:
+                throw GatewayError.notConnected
+            default:
+                break
+            }
+            guard ContinuousClock.now < deadline else {
+                throw GatewayError.timedOut(method: "gateway.ready")
+            }
+            try await Task.sleep(for: .milliseconds(40))
+        }
     }
 
     public func respond(to request: ServerRequest, result: JSONValue = .object([:])) async {

@@ -164,6 +164,30 @@ Task.detached {
         reporter.report(false, "socket", "\(error)")
     }
 
+    // 7. Joining a chat the way the window joins one, and letting it go again: read-only, but the
+    //    call the chat screen cannot work without.
+    if let newest {
+        do {
+            let gatewaySession = GatewaySession(
+                endpoint: endpoint,
+                credentials: session,
+                transport: URLSessionSocketTransport()
+            )
+            await gatewaySession.start()
+            let chat = ChatSession(gateway: gatewaySession)
+            let joined = try await chat.join(storedID: newest.id)
+            reporter.report(
+                !joined.liveID.isEmpty,
+                "join",
+                "stored \(newest.id.prefix(12))… became live \(joined.liveID.prefix(8))…, running \(joined.running)"
+            )
+            await chat.leave()
+            await gatewaySession.stop()
+        } catch {
+            reporter.report(false, "join", "\(error)")
+        }
+    }
+
     print(reporter.failures == 0 ? "all checks passed" : "\(reporter.failures) check(s) failed")
     semaphore.signal()
 }

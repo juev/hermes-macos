@@ -335,3 +335,46 @@ struct GatewaySessionTests {
         #expect(transport.sockets.count == 1)
     }
 }
+
+@Suite("A call made before the socket is up")
+struct EarlyCallTests {
+    private let endpoint = Endpoint(address: "https://hermes.example.test")!
+
+    @Test("A call waits for the connection instead of failing at once")
+    func waits() async throws {
+        let socket = FakeSocket()
+        let transport = ScriptedTransport([.socket(socket)])
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: transport,
+            firstPause: .milliseconds(20)
+        )
+        await gateway.start()
+
+        // Asked before the gateway said it was ready; the ready frame arrives a moment later.
+        async let answer = gateway.call("session.list", timeout: .seconds(5))
+        try await Task.sleep(for: .milliseconds(60))
+        socket.push(readyFrame())
+        try await Task.sleep(for: .milliseconds(80))
+        let request = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.list" })
+        socket.push(#"{"jsonrpc":"2.0","id":"\#(request["id"]?.stringValue ?? "x")","result":{"sessions":[]}}"#)
+        _ = try await answer
+        await gateway.stop()
+    }
+
+    @Test("A call on a session that was never started is an error, not a wait")
+    func notStarted() async throws {
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([])
+        )
+        do {
+            _ = try await gateway.call("session.list", timeout: .seconds(2))
+            Issue.record("A call on a stopped session did not throw")
+        } catch let error as GatewayError {
+            #expect(error == .notConnected)
+        }
+    }
+}
