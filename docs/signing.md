@@ -14,7 +14,7 @@ that is a separate decision.
 | Private key | in the `.p12`, base64 in the repository's secret `HERMES_MACOS_CERTIFICATE_P12` |
 | Password | `HERMES_MACOS_CERTIFICATE_PASSWORD` |
 | Identity name | `HERMES_MACOS_IDENTITY` (`Hermes macOS`) |
-| A second copy | Bitwarden, folder `macOS signing`, entry `macOS signing: Hermes macOS release` |
+| A second copy | Bitwarden, folder `macOS signing`, entry `macOS signing: Hermes macOS release` (`rbw get --full`) |
 
 The `.github/workflows/release.yml` job imports the certificate into a keychain of its own, signs the
 app and the disk image, and prints what it signed with. Without the secrets the job still builds, and
@@ -48,6 +48,15 @@ gh secret set HERMES_MACOS_IDENTITY --body "Hermes macOS"
 
 and put the same three things in Bitwarden. A new identity means a new signature: releases signed
 before it keep the old one, and a Mac that had allowed the old one asks again.
+
+`rbw add` writes the entry from an editor, and it only opens one from a terminal: without a pty the
+entry is created with no password and no error. If it has to be scripted, `script -q /dev/null` gives
+it a pty, and the editor it runs gets the temporary file as its only argument — first line the
+password, the rest the notes.
+
+The copy in Bitwarden was checked after it was written: the base64 read back from `rbw get --full`
+decodes to a file whose SHA-256 is the same as the one that signed 0.1.0, and its certificate names
+`CN=Hermes macOS` with that fingerprint.
 
 ## Signing a local build
 
