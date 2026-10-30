@@ -37,6 +37,9 @@ final class ChatModel {
         didSet { scheduleSearch() }
     }
 
+    /// True while the sidebar shows the archive instead of the chats.
+    private(set) var showingArchive = false
+
     /// The chats split for the sidebar, with the pins this Mac keeps.
     var sections: [Sidebar.Section] {
         Sidebar.sections(sessions)
@@ -73,7 +76,7 @@ final class ChatModel {
         await push.restoreIfEnabled()
         sessionsState = .loading
         do {
-            let page = try await session.sessions()
+            let page = try await session.sessions(archived: showingArchive ? .only : .exclude)
             let pinnedHere = pins.pins(for: server)
             sessions = page.sessions.map { chat in
                 !chat.pinned && pinnedHere.contains(chat.id) ? chat.settingPinned(true) : chat
@@ -358,6 +361,15 @@ final class ChatModel {
                 sendError = "The file could not be written: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Shows the archive instead of the chats, or goes back to them.
+    func toggleArchive() async {
+        showingArchive.toggle()
+        selection = nil
+        selected = nil
+        items = []
+        await load()
     }
 
     /// Pins a chat on this Mac, where a plain dashboard refuses to keep it.

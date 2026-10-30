@@ -143,7 +143,9 @@ struct ChatScreen: View {
             },
             onPin: { session, pinned in
                 model.pin(session, pinned: pinned)
-            }
+            },
+            showingArchive: model.showingArchive,
+            onToggleArchive: { Task { await model.toggleArchive() } }
         )
             .overlay {
                 if case .loading = model.sessionsState, model.sessions.isEmpty {
@@ -250,6 +252,23 @@ struct ChatScreen: View {
         if let model = session.model { parts.append(model) }
         if !session.source.isEmpty { parts.append(session.source) }
         if session.messageCount > 0 { parts.append("\(session.messageCount) messages") }
+        if let usage = session.usage {
+            parts.append("in \(Self.tokens(usage.inputTokens)) · out \(Self.tokens(usage.outputTokens))")
+            if let cost = usage.costUSD {
+                parts.append(String(format: "$%.2f", cost))
+            } else if usage.included {
+                parts.append("included")
+            }
+        }
         return parts.joined(separator: " · ")
+    }
+
+    /// Tokens as a person reads them at a glance: 6 353 536 is 6.4M.
+    static func tokens(_ count: Int) -> String {
+        switch count {
+        case 1_000_000...: return String(format: "%.1fM", Double(count) / 1_000_000)
+        case 1_000...: return String(format: "%.0fk", Double(count) / 1_000)
+        default: return "\(count)"
+        }
     }
 }

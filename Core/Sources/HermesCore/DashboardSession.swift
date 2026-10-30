@@ -71,14 +71,21 @@ public actor DashboardSession: SessionCredentials {
         // Anything else, 503 above all, keeps the tokens: the identity provider may come back.
     }
 
+    /// What a list of chats does with the archive.
+    public enum Archive: String, Sendable {
+        case exclude
+        case only
+        case all
+    }
+
     /// The chats the sidebar shows, newest activity first.
-    public func sessions(limit: Int = 50, offset: Int = 0) async throws -> SessionPage {
+    public func sessions(limit: Int = 50, offset: Int = 0, archived: Archive = .exclude) async throws -> SessionPage {
         let token = try await accessToken()
         let json = try await client.get("api/sessions", query: [
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "order", value: "recent"),
-            URLQueryItem(name: "archived", value: "exclude"),
+            URLQueryItem(name: "archived", value: archived.rawValue),
             URLQueryItem(name: "min_messages", value: "1")
         ], token: token)
         return SessionPage(json)

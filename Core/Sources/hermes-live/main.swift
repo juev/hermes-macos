@@ -98,6 +98,14 @@ Task.detached {
         reporter.report(false, "sessions", "\(error)")
     }
 
+    // 2b. The archive, which the sidebar shows on its own.
+    do {
+        let archived = try await session.sessions(limit: 3, archived: .only)
+        reporter.report(true, "archive", "\(archived.sessions.count) of \(archived.total) archived")
+    } catch {
+        reporter.report(false, "archive", "\(error)")
+    }
+
     // 3. Search.
     do {
         let hits = try await session.search("hermes", limit: 5)

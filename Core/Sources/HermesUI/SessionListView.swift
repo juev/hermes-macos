@@ -9,6 +9,8 @@ public struct SessionListView: View {
     public let onArchive: ((SessionSummary, Bool) -> Void)?
     public let onDelete: ((SessionSummary) -> Void)?
     public let onPin: ((SessionSummary, Bool) -> Void)?
+    public let showingArchive: Bool
+    public let onToggleArchive: (() -> Void)?
 
     public init(
         sections: [Sidebar.Section],
@@ -16,7 +18,9 @@ public struct SessionListView: View {
         onRename: ((SessionSummary) -> Void)? = nil,
         onArchive: ((SessionSummary, Bool) -> Void)? = nil,
         onDelete: ((SessionSummary) -> Void)? = nil,
-        onPin: ((SessionSummary, Bool) -> Void)? = nil
+        onPin: ((SessionSummary, Bool) -> Void)? = nil,
+        showingArchive: Bool = false,
+        onToggleArchive: (() -> Void)? = nil
     ) {
         self.sections = sections
         _selection = selection
@@ -24,6 +28,8 @@ public struct SessionListView: View {
         self.onArchive = onArchive
         self.onDelete = onDelete
         self.onPin = onPin
+        self.showingArchive = showingArchive
+        self.onToggleArchive = onToggleArchive
     }
 
     /// A sidebar reads ages at a glance: "now", "12 min", "3 h", "4 d", then the date.
@@ -61,6 +67,27 @@ public struct SessionListView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .bottom) {
+            if onToggleArchive != nil {
+                Button {
+                    onToggleArchive?()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: showingArchive ? "tray.full" : "archivebox")
+                            .font(.system(size: 10))
+                        Text(showingArchive ? "Back to the chats" : "Archive")
+                            .font(Theme.Fonts.sessionMeta)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .background(.bar)
+            }
+        }
     }
 }
 
