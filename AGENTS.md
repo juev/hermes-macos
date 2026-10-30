@@ -15,6 +15,26 @@ Rules for anyone changing this repository, human or agent. Build and test comman
   committed here: two copies of a payload is how the clients drift apart from what the server answered.
 - The app target is thin on purpose: windows, menus, typography. Anything decidable from a frame or a
   string belongs in `Core`, where it can be tested without a screen.
+- The package has three parts and a change goes in the lowest one that can hold it: `HermesCore` for the
+  protocol and the model, `HermesUI` for the typography and the views, `App` for the window and the
+  things that only exist inside a running app — notifications, the Keychain, the file picker.
+- `scripts/smoke.sh` runs the client's own code against a live dashboard, with the tokens the app keeps
+  in the Keychain, and prints what came back. A change to the wire is not done until it passes; it is
+  how three real faults were found that no test had: a tailnet address with no route, a call made
+  before the socket was ready, and a `where` that bound to one pattern of a `case`.
+
+## A window is not a check
+
+- A view is drawn by a test with `ImageRenderer` into `build/snapshots/`, not by opening a window. That
+  is what verifies the typography; a person looks at the images.
+- The built app can be started with `open -g -j`, which does not take the screen — but from an agent
+  session it starts the process **without creating the scene**: `App.init` runs, `RootView.init` never
+  does, and nothing that a launch would do (the restore, the permission prompts) happens. A hidden
+  launch therefore proves only that the process starts; it proves nothing about the window.
+- What the app does when it does run is readable in the unified log:
+  `log stream --predicate 'subsystem == "org.evsyukov.hermes.macos"'`.
+- Everything that needs the window itself — the sidebar, a menu, a system notification, a passkey — is
+  left to the person at the machine, and the session says so instead of pretending to have checked it.
 
 ## The server contract has one home
 
