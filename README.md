@@ -6,7 +6,7 @@ A native macOS client for the [Hermes Agent](https://github.com/NousResearch/her
 Swift 6 and SwiftUI. No Catalyst, no Electron, no web view: the protocol is spoken directly over the
 dashboard's HTTP and its JSON-RPC socket.
 
-![A chat: what the turn did on the way folded into one line, the answer set for reading](docs/screenshots/transcript.png)
+![Hermes for macOS: the chat list on the left, the chat on the right with what the turn did folded into one line](docs/screenshots/window.png)
 
 ## What it does
 
@@ -42,8 +42,8 @@ dashboard's HTTP and its JSON-RPC socket.
 | The chat list, grouped by date, pinned chats first. | Search over the dashboard's index: one row per chat. |
 | ![An approval from the agent](docs/screenshots/question.png) | ![A file the agent delivered](docs/screenshots/files.png) |
 | A command the agent stops before running. | A file the agent delivered, opened with one click. |
-| ![The composer](docs/screenshots/composer.png) | ![The transcript in the dark](docs/screenshots/transcript-dark.png) |
-| The composer, with a file attached. | The same transcript in the dark. |
+| ![The composer](docs/screenshots/composer.png) | ![The window in the dark](docs/screenshots/window-dark.png) |
+| The composer, with a file attached. | The same window in the dark. |
 
 Every picture is drawn by a test from synthetic data — no address, no chat and no name of a real
 dashboard (`HERMES_DOC_SCREENSHOTS=1 swift test --package-path Core --filter DocScreenshots`).

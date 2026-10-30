@@ -69,6 +69,8 @@ struct DocScreenshots {
         guard ProcessInfo.processInfo.environment["HERMES_DOC_SCREENSHOTS"] == "1" else { return }
         try FileManager.default.createDirectory(at: Self.output, withIntermediateDirectories: true)
 
+        try write(consoleWindow(dark: false), "window.png", width: 1180)
+        try write(consoleWindow(dark: true), "window-dark.png", width: 1180)
         try write(transcriptLight, "transcript.png", width: 900)
         try write(transcriptDark, "transcript-dark.png", width: 900)
         try write(sessionsList, "sessions.png", width: 320)
@@ -76,6 +78,97 @@ struct DocScreenshots {
         try write(questionCard, "question.png", width: 640)
         try write(files, "files.png", width: 640)
         try write(composer, "composer.png", width: 640)
+    }
+
+    /// The whole window, drawn the way it is built: the chat list on the left, the chat on the right,
+    /// the composer under it. The frames around it are drawn here, because a picture of a view is not
+    /// a picture of a window.
+    private func consoleWindow(dark: Bool) -> some View {
+        let scheme: ColorScheme = dark ? .dark : .light
+        let paper = dark ? Self.dark : Self.papers
+        let sidebar = dark ? Color(red: 0.15, green: 0.16, blue: 0.18) : Color(nsColor: .windowBackgroundColor)
+
+        return VStack(spacing: 0) {
+            // The title bar the app gets from the system.
+            HStack(spacing: 8) {
+                ForEach([Color(red: 0.93, green: 0.42, blue: 0.38),
+                         Color(red: 0.96, green: 0.75, blue: 0.32),
+                         Color(red: 0.35, green: 0.80, blue: 0.36)], id: \.self) { color in
+                    Circle().fill(color).frame(width: 12, height: 12)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(sidebar)
+
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    SearchFieldChrome(text: "")
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                    Divider()
+                    ForEach(Sidebar.sections(Self.sessions), id: \.group) { section in
+                        Text(Sidebar.title(for: section.group))
+                            .font(Theme.Fonts.sectionLabel)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 12)
+                            .padding(.top, 14)
+                            .padding(.bottom, 2)
+                        ForEach(section.chats.prefix(2)) { chat in
+                            SessionRow(session: chat)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Divider()
+                    HStack(spacing: 6) {
+                        Image(systemName: "archivebox").font(.system(size: 10))
+                        Text("Archive").font(Theme.Fonts.sessionMeta)
+                        Spacer()
+                    }
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+                }
+                .frame(width: 300)
+                .background(sidebar)
+
+                Divider()
+
+                VStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Nightly build report")
+                            .font(Theme.Fonts.chatTitle)
+                        Text("gpt-6.1-sol · cron · 142 messages · in 6.4M · out 37k · included")
+                            .font(Theme.Fonts.sessionMeta)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Theme.Metrics.contentPadding)
+                    .padding(.vertical, 9)
+                    .background(.bar)
+                    .overlay(alignment: .bottom) { Divider() }
+
+                    // Drawn whole rather than scrolled: a picture of a scroll view is an empty
+                    // scroll view, and these are the views the app draws all the same.
+                    TranscriptContent(items: Self.transcript)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .clipped()
+                    ComposerChrome(text: "Compare it with yesterday's run.")
+                }
+                .background(paper)
+            }
+            .frame(height: 720)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .environment(\.colorScheme, scheme)
     }
 
     private var transcriptLight: some View {
