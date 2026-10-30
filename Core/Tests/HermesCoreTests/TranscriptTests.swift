@@ -169,6 +169,45 @@ struct TranscriptTests {
         #expect(answer.tools[1].context == "/tmp/x")
     }
 
+    @Test("A cron report and a skill prompt become what they are")
+    func serviceMessages() {
+        let report = StoredMessage(
+            rowID: 10, role: "user",
+            text: "[Cron delivery: research-daily]\n**Тема:** NixOS."
+        )
+        let skillPrompt = StoredMessage(
+            rowID: 11, role: "user",
+            text: "[IMPORTANT: The user has invoked the \"homelab\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n---\nname: homelab\n---\n# homelab\n\nThe user has provided the following instruction alongside the skill invocation: проверь диски"
+        )
+        let quoted = StoredMessage(
+            rowID: 12, role: "user",
+            text: "[Replying to: \"the earlier line\"]\n\nи это ответ"
+        )
+        let items = Transcript.items(from: [report, skillPrompt, quoted])
+
+        guard case .cronReport(let cron) = items[0] else {
+            Issue.record("The cron report is not a report")
+            return
+        }
+        #expect(cron.job == "research-daily")
+        #expect(cron.text == "**Тема:** NixOS.")
+
+        guard case .user(let bubble) = items[1] else {
+            Issue.record("The skill prompt is not a message")
+            return
+        }
+        #expect(bubble.text == "проверь диски")
+        #expect(bubble.invocation?.skills == ["homelab"])
+        #expect(bubble.invocation?.full.hasPrefix("[IMPORTANT:") == true)
+
+        guard case .user(let reply) = items[2] else {
+            Issue.record("The reply is not a message")
+            return
+        }
+        #expect(reply.quote == "the earlier line")
+        #expect(reply.text == "и это ответ")
+    }
+
     @Test("A row the dashboard wrote for itself is not shown")
     func sessionMeta() throws {
         guard let json = Fixtures.json("sessions", "session-meta") else {

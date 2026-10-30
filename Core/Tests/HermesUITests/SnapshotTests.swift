@@ -56,7 +56,19 @@ struct SnapshotTests {
             После этого линковка проходит; если нет — проверьте, что `xcode-select -p` смотрит на **Xcode 27.1**, а не на Command Line Tools.
             """)
         ])),
-        .user(UserBubble(key: "u3", text: "Сработало. Спасибо!", timestamp: Date())),
+        .cronReport(CronReport(
+            key: "c9",
+            job: "research-daily",
+            text: "**Тема:** NixOS и Ansible.\n\nОтчёт собран, PR [#10](https://github.com/juev/research/pull/10) открыт.",
+            timestamp: Date()
+        )),
+        .user(UserBubble(
+            key: "u3",
+            text: "Сработало. Спасибо!",
+            timestamp: Date(),
+            quote: "Если снова всплывёт — проверьте, не держит ли старый Xcode свои модули",
+            invocation: Invocation(cron: false, skills: ["clean", "work"], full: "[IMPORTANT: The user has invoked the \"/clean /work\" skill bundle…")
+        )),
         .assistant(AssistantTurn(key: "a4", parts: [
             .text("Рад, что помогло. Если снова всплывёт — проверьте, не держит ли старый Xcode свои модули в `/Library/Developer`."),
             .tool(ToolRun(

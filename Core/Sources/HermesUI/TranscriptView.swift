@@ -95,6 +95,8 @@ public struct TranscriptContent: View {
                     MessageView(bubble: bubble)
                 case .assistant(let turn):
                     AnswerView(turn: turn, loadFile: loadFile, openFile: openFile)
+                case .cronReport(let report):
+                    CronReportView(report: report)
                 }
             }
         }
@@ -129,6 +131,77 @@ struct DaySeparator: View {
     }
 }
 
+/// The skills or the cron run the dashboard expanded a message into: their names, and the text the
+/// agent got on demand.
+struct InvocationChip: View {
+    let invocation: Invocation
+    @State private var expanded = false
+
+    private var label: String {
+        if invocation.cron { return "Cron run" }
+        if invocation.skills.isEmpty { return "Skill" }
+        return invocation.skills.joined(separator: ", ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.snappy(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: invocation.cron ? "clock.arrow.circlepath" : "wand.and.stars")
+                        .font(.system(size: 9))
+                    Text(label)
+                        .font(Theme.Fonts.sessionMeta)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 7, weight: .semibold))
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Theme.Palette.toolBackground, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("What the agent was told")
+
+            if expanded {
+                ScrollView {
+                    Text(invocation.full)
+                        .font(Theme.Fonts.toolOutput)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+                .padding(9)
+                .background(Theme.Palette.toolBackground, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
+    }
+}
+
+/// The report of a cron job: the job's name, then the report as the agent wrote it.
+struct CronReportView: View {
+    let report: CronReport
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Text("Cron · \(report.job)")
+                    .font(Theme.Fonts.sessionMeta)
+                    .foregroundStyle(.secondary)
+            }
+            MarkdownText(report.text)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Palette.toolBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
 /// What the person wrote: a bubble on the right, as far from the answer as the turn spacing.
 struct MessageView: View {
     let bubble: UserBubble
@@ -137,6 +210,19 @@ struct MessageView: View {
         HStack {
             Spacer(minLength: 80)
             VStack(alignment: .leading, spacing: 8) {
+                if let quote = bubble.quote, !quote.isEmpty {
+                    Text(quote)
+                        .font(Theme.Fonts.reasoning)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .padding(.leading, 9)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(Theme.Palette.reasoningRule).frame(width: 2)
+                        }
+                }
+                if let invocation = bubble.invocation {
+                    InvocationChip(invocation: invocation)
+                }
                 if !bubble.text.isEmpty {
                     Text(bubble.text)
                         .font(Theme.Fonts.message)

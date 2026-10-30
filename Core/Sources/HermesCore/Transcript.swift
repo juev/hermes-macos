@@ -41,12 +41,43 @@ public struct UserBubble: Sendable, Equatable {
     public let rowID: Int?
     /// When the dashboard wrote the message down; nil while it is still being sent.
     public let timestamp: Date?
+    /// What the message replies to, when it came from a chat platform that carries quotes.
+    public let quote: String?
+    /// The skills or the cron run the dashboard expanded the message into, if it built it.
+    public let invocation: Invocation?
 
-    public init(key: String, text: String, attachments: [Attachment] = [], rowID: Int? = nil, timestamp: Date? = nil) {
+    public init(
+        key: String,
+        text: String,
+        attachments: [Attachment] = [],
+        rowID: Int? = nil,
+        timestamp: Date? = nil,
+        quote: String? = nil,
+        invocation: Invocation? = nil
+    ) {
         self.key = key
         self.text = text
         self.attachments = attachments
         self.rowID = rowID
+        self.timestamp = timestamp
+        self.quote = quote
+        self.invocation = invocation
+    }
+}
+
+/// The report of a cron job, filed by the dashboard into the chat that scheduled it.
+public struct CronReport: Sendable, Equatable, Identifiable {
+    public let key: String
+    public let job: String
+    public let text: String
+    public let timestamp: Date?
+
+    public var id: String { key }
+
+    public init(key: String, job: String, text: String, timestamp: Date? = nil) {
+        self.key = key
+        self.job = job
+        self.text = text
         self.timestamp = timestamp
     }
 }
@@ -110,12 +141,15 @@ public struct AssistantTurn: Sendable, Equatable {
 public enum ChatItem: Sendable, Equatable {
     case user(UserBubble)
     case assistant(AssistantTurn)
+    /// A cron job's report, which the dashboard filed as a message of the person.
+    case cronReport(CronReport)
 
     /// When the item happened, where the dashboard says.
     public var timestamp: Date? {
         switch self {
         case .user(let bubble): bubble.timestamp
         case .assistant(let turn): turn.timestamp
+        case .cronReport(let report): report.timestamp
         }
     }
 }
@@ -137,14 +171,40 @@ public enum Transcript {
             switch message.role {
             case "user":
                 flush()
-                let (text, attachments) = TextParsing.splitUserText(message.text)
+                // A cron job files its report as a message of the person; it is the job that speaks.
+                if let report = ServiceMessages.cronReport(message.text) {
+                    items.append(.cronReport(CronReport(
+                        key: "c\(message.rowID)",
+                        job: report.job,
+                        text: report.report,
+                        timestamp: message.timestamp
+                    )))
+                    continue
+                }
+                // The dashboard writes a prompt around a skill the person invoked, and files the
+                // instructions for the agent in it: what they wrote is the message, the rest a chip.
+                var written = message.text
+                var invocation: Invocation?
+                if let parsed = ServiceMessages.invocation(message.text) {
+                    written = parsed.written
+                    invocation = parsed.invocation
+                }
+                var quote: String?
+                if invocation == nil {
+                    let split = ServiceMessages.splitQuote(written)
+                    quote = split.quote
+                    written = split.text
+                }
+                let (text, attachments) = TextParsing.splitUserText(written)
                 let images = message.images.map { Attachment(path: $0, name: "image", isImage: true) }
                 items.append(.user(UserBubble(
                     key: "u\(message.rowID)",
                     text: text,
                     attachments: attachments + images,
                     rowID: message.rowID,
-                    timestamp: message.timestamp
+                    timestamp: message.timestamp,
+                    quote: quote,
+                    invocation: invocation
                 )))
 
             case "assistant":
