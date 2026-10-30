@@ -42,6 +42,15 @@ public final class KeychainVault: @unchecked Sendable {
     public let account: String
     private let lock = NSLock()
     private var loaded: Contents?
+    /// What the first read of this launch found, kept even when it found nothing: a read that was
+    /// refused must not be tried again by every request that wants a token, or a denial turns into a
+    /// wall of the same dialog.
+    private enum Read {
+        case found(Contents)
+        case missing
+        case refused(OSStatus)
+    }
+    private var attempt: Read?
 
     public init(service: String = "org.evsyukov.hermes.macos", account: String = "vault") {
         self.service = service
@@ -70,6 +79,14 @@ public final class KeychainVault: @unchecked Sendable {
         }
     }
 
+    /// Forgets what the first read found, for a caller that knows the person has just fixed access.
+    public func refresh() {
+        withLock {
+            loaded = nil
+            attempt = nil
+        }
+    }
+
     /// The addresses the vault holds tokens for: what the sidebar can open without a sign-in.
     public var servers: [String] {
         withLock { contents()?.tokens.keys.sorted() ?? [] }
@@ -93,6 +110,7 @@ public final class KeychainVault: @unchecked Sendable {
     public func delete() {
         withLock {
             loaded = Contents()
+            attempt = .found(Contents())
             SecItemDelete(baseQuery() as CFDictionary)
         }
     }
@@ -107,6 +125,11 @@ public final class KeychainVault: @unchecked Sendable {
 
     private func contents() -> Contents? {
         if let loaded { return loaded }
+        switch attempt {
+        case .found(let contents): return contents
+        case .missing, .refused: return nil
+        case .none: break
+        }
         // Counted out loud: with ad-hoc signing macOS asks again for every access, so the number of
         // asks a launch makes is the number of reads, and the log is where that can be seen.
         KeychainVault.logRead(account)
@@ -114,17 +137,31 @@ public final class KeychainVault: @unchecked Sendable {
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data,
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess, let data = item as? Data,
               let contents = try? JSONDecoder().decode(Contents.self, from: data) else {
+            if status == errSecItemNotFound || status == errSecSuccess {
+                attempt = .missing
+            } else {
+                attempt = .refused(status)
+                KeychainVault.logRefusal(status)
+            }
             return nil
         }
         loaded = contents
+        attempt = .found(contents)
         return contents
+    }
+
+    /// A read macOS would not answer says which answer that was, once per launch.
+    static func logRefusal(_ status: OSStatus) {
+        Logger(subsystem: "org.evsyukov.hermes.macos", category: "secrets")
+            .error("keychain read refused with status \(status, privacy: .public)")
     }
 
     private func store(_ contents: Contents) {
         loaded = contents
+        attempt = .found(contents)
         let data = (try? JSONEncoder().encode(contents)) ?? Data()
         var query = baseQuery()
         let attributes: [String: Any] = [kSecValueData as String: data]
