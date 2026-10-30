@@ -270,7 +270,14 @@ struct ChatScreen: View {
     }
 
     private var subtitle: String {
-        model.selected.map(subtitle(for:)) ?? (model.isDraft ? "The dashboard names it from the first message." : "")
+        if let selected = model.selected { return subtitle(for: selected) }
+        guard model.isDraft else { return "" }
+        // A chat that has no history answers on the dashboard's default, or on the model picked for
+        // it here — and it is the dashboard that names it, from the first message.
+        var parts: [String] = []
+        if let draftModel = model.draftModel { parts.append(draftModel) }
+        parts.append("The dashboard names it from the first message.")
+        return parts.joined(separator: " · ")
     }
 
     private var detail: some View {

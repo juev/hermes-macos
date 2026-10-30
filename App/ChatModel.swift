@@ -51,16 +51,29 @@ final class ChatModel {
     private(set) var modelConfirmation: String?
     private(set) var changingModel = false
 
-    /// The model each chat was switched to in this window. The dashboard's list says which model a
-    /// chat was started with, and it does not change when another chat is switched — a switch here
-    /// changes one chat, so the window remembers it for that chat alone.
+    /// The model each chat answers on, as far as this window knows. A switch made here changes one
+    /// chat and is kept for that chat alone; a chat that is joined reports the model its live session
+    /// runs on, which is better than the stored row and is how a new chat's first model is learnt.
     private var chatModels: [String: String] = [:]
+
+    /// The model picked for a draft that has not been sent yet, kept apart from [models]: a list read
+    /// from the dashboard replaces the default, not what the person chose.
+    private var pickedDraftModel: String?
+
+    /// True while the list of models is being read, so two callers in one moment ask once.
+    private var readingModels = false
+
+    /// What a chat that does not exist yet will answer on: the dashboard's default, or the model
+    /// picked in this window before the first message.
+    var draftModel: String? {
+        isDraft ? (pickedDraftModel ?? models?.model) : nil
+    }
 
     /// The model the open chat answers on: its own if it was switched here, else the one the list
     /// says it started with. A new chat has no history to ask, so it takes the dashboard's default.
     var currentModel: String? {
         if let selection, let known = chatModels[selection] { return known }
-        if isDraft { return models?.model }
+        if isDraft { return draftModel }
         return selected?.model
     }
 
@@ -135,6 +148,9 @@ final class ChatModel {
             if selection == nil, let first = sessions.first {
                 await open(first.id)
             }
+            // Read here as well as by the menu: a read that failed at launch would leave nothing to
+            // name the model a new chat answers on, and the menu's task does not come back.
+            await loadModels()
             prefetch()
         } catch {
             // A list that was already painted stays: a refresh that fails is not a blank window.
@@ -270,6 +286,11 @@ final class ChatModel {
             let joined = try await chat.join(storedID: id)
             await wire(chat)
             running = joined.running
+            // The live session knows the model it answers on better than the stored row does: a chat
+            // started on another model than the dashboard's default is named only there.
+            if let live = joined.model, !live.isEmpty {
+                chatModels[id] = live
+            }
             if joined.running {
                 items = LiveTurn.resume(items, streamed: joined.streamed)
             }
@@ -312,6 +333,8 @@ final class ChatModel {
         status = nil
         sendError = nil
         transcriptState = .ready
+        // A new chat answers on the dashboard's default until one is picked for it here.
+        pickedDraftModel = nil
         // The window shows the new chat at once: the session is asked for behind it, and only a
         // message waits for the answer.
         isDraft = true
@@ -329,13 +352,23 @@ final class ChatModel {
             sendError = ErrorMessage.of(error)
         }
         creatingChat = false
+        // Which model the new chat will answer on is part of what the window promised to show, and
+        // the menu's own read does not come back when it failed at launch.
+        await loadModels()
     }
 
     /// The first turn of a new chat is over: the dashboard has stored it, so the list is read again
     /// and the chat is opened by the id the sidebar knows, named like any other.
     private func adoptDraft() async {
+        // The model picked for the draft is the one the chat keeps: the list read below names the
+        // chat, and the session it is joined to says what it answers on, but neither is asked again.
+        let picked = pickedDraftModel
         isDraft = false
+        pickedDraftModel = nil
         await load()
+        if let picked, let selection, chatModels[selection] == nil {
+            chatModels[selection] = picked
+        }
     }
 
     /// What becomes of a chat the window is leaving: one whose turn still runs keeps its session for
@@ -606,9 +639,12 @@ final class ChatModel {
     }
 
     /// Reads the models the dashboard offers: the list is small, and a menu that has to wait for it
-    /// would open empty.
+    /// would open empty. A read that failed is tried again by the next caller instead of being kept
+    /// as a nil for the rest of the run — the tokens may still be on their way at launch.
     func loadModels() async {
-        guard models == nil else { return }
+        guard models == nil, !readingModels else { return }
+        readingModels = true
+        defer { readingModels = false }
         models = try? await session.modelOptions()
     }
 
@@ -624,6 +660,9 @@ final class ChatModel {
                 modelConfirmation = nil
                 sendError = nil
                 if let selection { chatModels[selection] = model }
+                // A chat that has no name yet keeps the pick itself: there is no id to keep it under,
+                // and the first turn's answer will name one.
+                if isDraft { pickedDraftModel = model }
                 models = models.map { old in
                     ModelOptions(model: model, provider: provider, providers: old.providers.map { entry in
                         ModelProvider(slug: entry.slug, name: entry.name, models: entry.models,
