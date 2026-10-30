@@ -124,6 +124,7 @@ final class ChatModel {
     }
 
     private func apply(_ event: GatewayEvent) {
+        let wasRunning = running
         switch event.type {
         case "message.start":
             running = true
@@ -143,6 +144,17 @@ final class ChatModel {
             break
         }
         items = LiveTurn.apply(event, to: items)
+
+        // A turn that ends while the window is behind another one is what a banner is for.
+        if event.type == "message.complete", wasRunning {
+            let answer: String
+            if case .assistant(let turn)? = items.last {
+                answer = turn.text
+            } else {
+                answer = ""
+            }
+            TurnNotifier.shared.turnFinished(chat: selected?.label ?? "Hermes", answer: answer)
+        }
     }
 
     private func scheduleSearch() {
