@@ -245,3 +245,91 @@ struct AttachmentTests {
         await gateway.stop()
     }
 }
+
+@Suite("A chat that is not open")
+struct ChatAdminTests {
+    private let endpoint = Endpoint(address: "https://hermes.example.test")!
+
+    private func connected(_ socket: FakeSocket) async -> GatewaySession {
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([.socket(socket)]),
+            firstPause: .milliseconds(20)
+        )
+        await gateway.start()
+        try? await waitUntil { await gateway.currentState() == .ready }
+        return gateway
+    }
+
+    private func answer(_ socket: FakeSocket, method: String, result: JSONValue) async throws {
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == method } }
+        let request = try #require(socket.sentFrames.last { $0["method"]?.stringValue == method })
+        let frame: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": result]
+        socket.push(frame.encodedString)
+    }
+
+    @Test("A rename joins the chat for the call and lets it go")
+    func rename() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = await connected(socket)
+        let admin = ChatAdmin(gateway: gateway)
+
+        async let renaming = admin.rename(storedID: "stored-1", title: "Новое имя")
+        try await answer(socket, method: "session.resume", result: ["session_id": "live-1"])
+        try await answer(socket, method: "session.title", result: [:])
+        try await answer(socket, method: "session.close", result: [:])
+        try await renaming
+
+        let resume = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.resume" })
+        #expect(resume["params"]?["lazy"]?.boolValue == true)
+        #expect(resume["params"]?["omit_messages"]?.boolValue == true)
+        let title = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.title" })
+        #expect(title["params"]?["session_id"]?.stringValue == "live-1")
+        #expect(title["params"]?["title"]?.stringValue == "Новое имя")
+        #expect(socket.sentFrames.contains { $0["method"]?.stringValue == "session.close" })
+        await gateway.stop()
+    }
+
+    @Test("An archive and a delete name the chat the sidebar knows")
+    func archiveAndDelete() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = await connected(socket)
+        let admin = ChatAdmin(gateway: gateway)
+
+        async let archiving = admin.archive(storedID: "stored-1", archived: true)
+        try await answer(socket, method: "session.archive", result: [:])
+        try await archiving
+        let archive = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.archive" })
+        #expect(archive["params"]?["session_key"]?.stringValue == "stored-1")
+        #expect(archive["params"]?["archived"]?.boolValue == true)
+
+        async let deleting = admin.delete(storedID: "stored-2")
+        try await answer(socket, method: "session.delete", result: [:])
+        try await deleting
+        let deletion = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.delete" })
+        #expect(deletion["params"]?["session_id"]?.stringValue == "stored-2")
+        await gateway.stop()
+    }
+
+    @Test("A chat that cannot be joined is not renamed")
+    func noJoin() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = await connected(socket)
+        let admin = ChatAdmin(gateway: gateway)
+
+        async let renaming = admin.rename(storedID: "stored-1", title: "x")
+        try await answer(socket, method: "session.resume", result: [:])
+        do {
+            try await renaming
+            Issue.record("A chat without a live session was renamed")
+        } catch let error as ChatError {
+            #expect(error == .noLiveSession)
+        }
+        #expect(!socket.sentFrames.contains { $0["method"]?.stringValue == "session.title" })
+        await gateway.stop()
+    }
+}

@@ -5,10 +5,22 @@ import SwiftUI
 public struct SessionListView: View {
     public let sessions: [SessionSummary]
     @Binding public var selection: SessionSummary.ID?
+    public let onRename: ((SessionSummary) -> Void)?
+    public let onArchive: ((SessionSummary, Bool) -> Void)?
+    public let onDelete: ((SessionSummary) -> Void)?
 
-    public init(sessions: [SessionSummary], selection: Binding<SessionSummary.ID?>) {
+    public init(
+        sessions: [SessionSummary],
+        selection: Binding<SessionSummary.ID?>,
+        onRename: ((SessionSummary) -> Void)? = nil,
+        onArchive: ((SessionSummary, Bool) -> Void)? = nil,
+        onDelete: ((SessionSummary) -> Void)? = nil
+    ) {
         self.sessions = sessions
         _selection = selection
+        self.onRename = onRename
+        self.onArchive = onArchive
+        self.onDelete = onDelete
     }
 
     /// A sidebar reads ages at a glance: "now", "12 min", "3 h", "4 d", then the date.
@@ -28,6 +40,12 @@ public struct SessionListView: View {
             ForEach(sessions) { session in
                 SessionRow(session: session)
                     .tag(session.id)
+                    .contextMenu {
+                        Button("Rename…") { onRename?(session) }
+                        Button(session.archived ? "Unarchive" : "Archive") { onArchive?(session, !session.archived) }
+                        Divider()
+                        Button("Delete…", role: .destructive) { onDelete?(session) }
+                    }
             }
         }
         .listStyle(.sidebar)

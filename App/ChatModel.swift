@@ -29,6 +29,7 @@ final class ChatModel {
     private(set) var hits: [SearchHit] = []
     private(set) var searchState: Loading = .ready
     private var searchTask: Task<Void, Never>?
+    private var admin: ChatAdmin?
 
     /// What the person typed into the search field; an empty one shows the chats again.
     var query = "" {
@@ -298,6 +299,63 @@ final class ChatModel {
                 sendError = "The file could not be written: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Gives a chat another name, over the open chat's session or a join made for the call.
+    func rename(_ summary: SessionSummary, to title: String) async {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        do {
+            if summary.id == selection, let chat {
+                try await chat.rename(trimmed)
+            } else {
+                try await administrator().rename(storedID: summary.id, title: trimmed)
+            }
+            await load()
+            if let selection { await open(selection) }
+        } catch {
+            sendError = ErrorMessage.of(error)
+        }
+    }
+
+    /// Files a chat away, or takes it back out of the archive.
+    func archive(_ summary: SessionSummary, archived: Bool) async {
+        do {
+            try await administrator().archive(storedID: summary.id, archived: archived)
+            if archived, summary.id == selection {
+                await chat?.leave()
+                chat = nil
+                selection = nil
+                items = []
+            }
+            await load()
+        } catch {
+            sendError = ErrorMessage.of(error)
+        }
+    }
+
+    /// Deletes a chat and everything in it.
+    func delete(_ summary: SessionSummary) async {
+        do {
+            if summary.id == selection {
+                await chat?.leave()
+                chat = nil
+                selection = nil
+                items = []
+                transcriptState = .ready
+            }
+            try await administrator().delete(storedID: summary.id)
+            await load()
+        } catch {
+            sendError = ErrorMessage.of(error)
+        }
+    }
+
+    private func administrator() -> ChatAdmin {
+        if let admin { return admin }
+        let made = ChatAdmin(gateway: gateway)
+        admin = made
+        return made
     }
 
     func reload() async {

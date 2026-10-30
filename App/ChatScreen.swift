@@ -7,6 +7,9 @@ struct ChatScreen: View {
     @State private var model: ChatModel
     @State private var selection: SessionSummary.ID?
     @State private var showingPush = false
+    @State private var renaming: SessionSummary?
+    @State private var newTitle = ""
+    @State private var deleting: SessionSummary?
 
     let onDisconnect: () -> Void
 
@@ -39,6 +42,27 @@ struct ChatScreen: View {
         }
         .sheet(isPresented: $showingPush) {
             PushSettingsView(model: model.push)
+        }
+        .sheet(item: $renaming) { session in
+            RenameChatSheet(title: newTitle) { title in
+                renaming = nil
+                Task { await model.rename(session, to: title) }
+            } onCancel: {
+                renaming = nil
+            }
+        }
+        .confirmationDialog(
+            "Delete this chat?",
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            presenting: deleting
+        ) { session in
+            Button("Delete \(session.label.prefix(40))", role: .destructive) {
+                deleting = nil
+                Task { await model.delete(session) }
+            }
+            Button("Keep it", role: .cancel) { deleting = nil }
+        } message: { _ in
+            Text("The chat and its messages are removed from the dashboard. This cannot be undone.")
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -74,7 +98,20 @@ struct ChatScreen: View {
     }
 
     private var sessions: some View {
-        SessionListView(sessions: model.sessions, selection: $selection)
+        SessionListView(
+            sessions: model.sessions,
+            selection: $selection,
+            onRename: { session in
+                newTitle = session.title.isEmpty ? session.label : session.title
+                renaming = session
+            },
+            onArchive: { session, archived in
+                Task { await model.archive(session, archived: archived) }
+            },
+            onDelete: { session in
+                deleting = session
+            }
+        )
             .overlay {
                 if case .loading = model.sessionsState, model.sessions.isEmpty {
                     ProgressView().controlSize(.small)

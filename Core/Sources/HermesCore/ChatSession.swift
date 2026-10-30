@@ -141,6 +141,15 @@ public actor ChatSession {
         ])
     }
 
+    /// Gives the chat another name. The dashboard titles a chat by its start until one is given.
+    public func rename(_ title: String) async throws {
+        guard let liveID else { throw ChatError.notConnected }
+        _ = try await gateway.call("session.title", params: [
+            "session_id": .string(liveID),
+            "title": .string(title)
+        ])
+    }
+
     /// Stops the turn under way.
     public func interrupt() async throws {
         guard let liveID else { throw ChatError.notConnected }
