@@ -36,10 +36,24 @@ final class ChatModel {
     /// Which chat holds the question on screen, which is not always the chat the window shows.
     private var questionOwners: [String: ChatSession] = [:]
     private let pins = LocalPins()
+    /// What was read before, so a launch paints before the dashboard answers.
+    private let cache = ChatCache.standard()
+    private var prefetchTask: Task<Void, Never>?
 
     /// What the person typed into the search field; an empty one shows the chats again.
     var query = "" {
         didSet { scheduleSearch() }
+    }
+
+    /// The models this dashboard can answer on.
+    private(set) var models: ModelOptions?
+    /// The app has been told the model costs more and is waiting for a second yes.
+    private(set) var modelConfirmation: String?
+    private(set) var changingModel = false
+
+    /// The model the open chat answers on, as the dashboard last said.
+    var currentModel: String? {
+        models?.model ?? selected?.model
     }
 
     /// True while the sidebar shows the archive instead of the chats.
@@ -74,25 +88,62 @@ final class ChatModel {
     private(set) var question: AgentQuestion?
     /// A chat that exists only in the gateway so far: created, not yet named by its first message.
     private(set) var isDraft = false
+    /// True while the gateway is being asked for the session of a new chat. The window shows the
+    /// composer at once and only the send waits.
+    private(set) var creatingChat = false
 
     /// True when a message can be written: a stored chat is open, or a new one is being started.
     var hasOpenChat: Bool { selection != nil || isDraft }
 
     func load() async {
         await push.restoreIfEnabled()
-        sessionsState = .loading
+
+        // What the last launch read, painted at once; the dashboard's answer replaces it when it comes.
+        if sessions.isEmpty, let cached = await cache.read(ChatCache.sessionsName(server: server)) {
+            take(SessionPage(cached))
+            if sessionsState != .ready { sessionsState = .ready }
+        }
+        if sessions.isEmpty { sessionsState = .loading }
+
         do {
-            let page = try await session.sessions(archived: showingArchive ? .only : .exclude)
-            let pinnedHere = pins.pins(for: server)
-            sessions = page.sessions.map { chat in
-                !chat.pinned && pinnedHere.contains(chat.id) ? chat.settingPinned(true) : chat
-            }
+            let payload = try await session.sessionsPayload(archived: showingArchive ? .only : .exclude)
+            await cache.write(payload, name: ChatCache.sessionsName(server: server))
+            take(SessionPage(payload))
             sessionsState = .ready
             if selection == nil, let first = sessions.first {
                 await open(first.id)
             }
+            prefetch()
         } catch {
-            sessionsState = .failed(ErrorMessage.of(error))
+            // A list that was already painted stays: a refresh that fails is not a blank window.
+            if sessions.isEmpty {
+                sessionsState = .failed(ErrorMessage.of(error))
+            } else {
+                sendError = ErrorMessage.of(error)
+            }
+        }
+    }
+
+    /// Takes a page of chats and marks the ones this Mac pinned itself.
+    private func take(_ page: SessionPage) {
+        let pinnedHere = pins.pins(for: server)
+        sessions = page.sessions.map { chat in
+            !chat.pinned && pinnedHere.contains(chat.id) ? chat.settingPinned(true) : chat
+        }
+    }
+
+    /// Reads the chats around the open one while nothing else needs the wire, so opening one of them
+    /// paints from disk instead of waiting.
+    private func prefetch() {
+        prefetchTask?.cancel()
+        let ids = sessions.prefix(12).map(\.id)
+        prefetchTask = Task { [session, cache] in
+            for id in ids {
+                if Task.isCancelled { return }
+                if await cache.read(ChatCache.transcriptName(chat: id), olderThan: 600) != nil { continue }
+                guard let payload = try? await session.messagesPayload(sessionID: id) else { continue }
+                await cache.write(payload, name: ChatCache.transcriptName(chat: id))
+            }
         }
     }
 
@@ -113,13 +164,22 @@ final class ChatModel {
         await release(previousChat, storedID: previousRunning ? previousID : nil, opening: id)
         running = false
 
+        // The history as it was last read, at once; the wire corrects it a moment later.
+        if let cached = await cache.read(ChatCache.transcriptName(chat: id)) {
+            items = Transcript.items(from: StoredMessage.page(cached))
+            transcriptState = .ready
+        }
+
         do {
-            let rows = try await session.messages(sessionID: id)
-            items = Transcript.items(from: rows)
+            let payload = try await session.messagesPayload(sessionID: id)
+            await cache.write(payload, name: ChatCache.transcriptName(chat: id))
+            items = Transcript.items(from: StoredMessage.page(payload))
             transcriptState = .ready
         } catch {
-            transcriptState = .failed(ErrorMessage.of(error))
-            return
+            if items.isEmpty {
+                transcriptState = .failed(ErrorMessage.of(error))
+                return
+            }
         }
 
         // Coming back to a chat whose turn never ended: its session is still the live one.
@@ -172,7 +232,6 @@ final class ChatModel {
         let previous = chat
         let previousID = selection
         chat = nil
-        await release(previous, storedID: running ? previousID : nil, opening: nil)
         selection = nil
         selected = nil
         items = []
@@ -181,19 +240,23 @@ final class ChatModel {
         status = nil
         sendError = nil
         transcriptState = .ready
-        isDraft = false
+        // The window shows the new chat at once: the session is asked for behind it, and only a
+        // message waits for the answer.
+        isDraft = true
+        creatingChat = true
+
+        await release(previous, storedID: running ? previousID : nil, opening: nil)
 
         let chat = ChatSession(gateway: gateway, hub: hub)
         self.chat = chat
         await wire(chat)
         do {
-            // The chat is a draft only once the gateway has made it: until then there is nothing to
-            // write into, and a composer that took words would lose them.
             try await chat.create()
-            isDraft = true
         } catch {
+            isDraft = false
             sendError = ErrorMessage.of(error)
         }
+        creatingChat = false
     }
 
     /// The first turn of a new chat is over: the dashboard has stored it, so the list is read again
@@ -261,6 +324,11 @@ final class ChatModel {
 
     /// Sends what the person wrote into the open chat, with the files picked for it.
     func send() async {
+        // A chat being made: the words wait for the session instead of being refused, so hitting
+        // Return the moment the window opens a new chat still sends.
+        while creatingChat {
+            try? await Task.sleep(for: .milliseconds(60))
+        }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = drafts
         guard !text.isEmpty || !files.isEmpty, !running, let chat else { return }
@@ -458,6 +526,61 @@ final class ChatModel {
                 sendError = "The file could not be written: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Reads the models the dashboard offers: the list is small, and a menu that has to wait for it
+    /// would open empty.
+    func loadModels() async {
+        guard models == nil else { return }
+        models = try? await session.modelOptions()
+    }
+
+    /// Answers this chat on another model from its next turn.
+    func chooseModel(provider: String, model: String, confirmed: Bool = false) async {
+        guard let chat, hasOpenChat else { return }
+        await loadModels()
+        changingModel = true
+        defer { changingModel = false }
+        do {
+            switch try await chat.setModel(provider: provider, model: model, confirmed: confirmed) {
+            case .set:
+                modelConfirmation = nil
+                sendError = nil
+                models = models.map { old in
+                    ModelOptions(model: model, provider: provider, providers: old.providers.map { entry in
+                        ModelProvider(slug: entry.slug, name: entry.name, models: entry.models,
+                                      isCurrent: entry.slug == provider, warning: entry.warning)
+                    })
+                }
+            case .deferred(let warning):
+                modelConfirmation = nil
+                status = warning ?? "The turn under way keeps the model it started on."
+            case .needsConfirmation(let message):
+                modelConfirmation = message
+                pendingModel = (provider, model)
+            }
+        } catch {
+            sendError = ErrorMessage.of(error)
+        }
+    }
+
+    /// The list of models, named for the menu.
+    var modelList: ModelOptions? { models }
+
+    /// The pick the dashboard was unsure about, remembered so a second yes can finish it.
+    private var pendingModel: (provider: String, model: String)?
+
+    func dismissModelConfirmation() {
+        modelConfirmation = nil
+        pendingModel = nil
+    }
+
+    /// The second yes: the same switch, this time told that the price is understood.
+    func confirmModelSwitch() async {
+        guard let pending = pendingModel else { return }
+        modelConfirmation = nil
+        pendingModel = nil
+        await chooseModel(provider: pending.provider, model: pending.model, confirmed: true)
     }
 
     /// Shows the archive instead of the chats, or goes back to them.

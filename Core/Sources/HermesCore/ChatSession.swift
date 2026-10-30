@@ -174,6 +174,26 @@ public actor ChatSession {
         ])
     }
 
+    /// Asks the dashboard to answer this chat on another model. A running turn keeps the old one, and
+    /// an expensive model is asked for twice — once to hear that it is expensive.
+    public func setModel(provider: String, model: String, confirmed: Bool = false) async throws -> ModelChange {
+        guard let liveID else { throw ChatError.notConnected }
+        var params: [String: JSONValue] = [
+            "session_id": .string(liveID),
+            "key": "model",
+            "value": .string("\(model) --provider \(provider)")
+        ]
+        if confirmed { params["confirm_expensive_model"] = true }
+        let answer = try await gateway.call("config.set", params: params)
+        if answer["confirm_required"]?.boolValue == true {
+            return .needsConfirmation(message: answer["confirm_message"]?.stringValue ?? "This model costs more than the one in use.")
+        }
+        if answer["deferred"]?.boolValue == true {
+            return .deferred(warning: answer["warning"]?.stringValue)
+        }
+        return .set
+    }
+
     /// Stops the turn under way.
     public func interrupt() async throws {
         guard let liveID else { throw ChatError.notConnected }

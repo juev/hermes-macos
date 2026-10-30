@@ -29,12 +29,19 @@ struct ChatScreen: View {
     var body: some View {
         NavigationSplitView {
             VStack(spacing: 0) {
+                // The field keeps its place: whatever is below it changes, it does not.
                 SearchField(text: Binding(get: { model.query }, set: { model.query = $0 }))
-                if model.isSearching {
-                    searchResults
-                } else {
-                    sessions
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                Divider()
+                Group {
+                    if model.isSearching {
+                        searchResults
+                    } else {
+                        sessions
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 380)
         } detail: {
@@ -97,6 +104,9 @@ struct ChatScreen: View {
                 .help("Start a chat (⌘N)")
             }
             ToolbarItem(placement: .primaryAction) {
+                modelMenu
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     showingPush = true
                 } label: {
@@ -111,19 +121,6 @@ struct ChatScreen: View {
                     Label("Change server", systemImage: "rectangle.portrait.and.arrow.right")
                 }
                 .help("Close this dashboard and go back to the address")
-            }
-            ToolbarItem(placement: .navigation) {
-                if let selected = model.selected {
-                    VStack(alignment: .leading) {
-                        Text(selected.label)
-                            .font(.headline)
-                            .lineLimit(1)
-                        Text(subtitle(for: selected))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
             }
         }
     }
@@ -180,7 +177,7 @@ struct ChatScreen: View {
             if model.hits.isEmpty {
                 ContentUnavailableView("Nothing found", systemImage: "magnifyingglass", description: Text("No chat holds that."))
             } else {
-                SearchResultsView(hits: model.hits, query: model.query, selection: Binding(
+                SearchResultsView(matches: SearchGrouping.byChat(model.hits), query: model.query, selection: Binding(
                     get: { selection },
                     set: { id in
                         guard let id else { return }
@@ -193,7 +190,78 @@ struct ChatScreen: View {
     }
 
     @ViewBuilder
+    /// The name of the chat and what it cost, above the transcript rather than in the toolbar: a
+    /// window title is clipped to one rounded pill, and this has more to say than fits in one.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(Theme.Fonts.chatTitle)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(Theme.Fonts.sessionMeta)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Metrics.contentPadding)
+        .padding(.vertical, 9)
+        .background(.bar)
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
+    /// The model the chat answers on, and the others it could. Opening the menu reads the list the
+    /// first time; a pick on an expensive model comes back asking again.
+    private var modelMenu: some View {
+        Menu {
+            if let models = model.modelList {
+                ForEach(models.providers) { provider in
+                    Section(provider.name) {
+                        ForEach(provider.models, id: \.self) { name in
+                            Button {
+                                Task { await model.chooseModel(provider: provider.slug, model: name) }
+                            } label: {
+                                if name == model.currentModel {
+                                    Label(name, systemImage: "checkmark")
+                                } else {
+                                    Text(name)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text("Reading the models…")
+            }
+        } label: {
+            Label(model.currentModel ?? "Model", systemImage: "cpu")
+        }
+        .disabled(!model.hasOpenChat || model.changingModel)
+        .help("Choose the model this chat answers on")
+        .task { await model.loadModels() }
+    }
+
+    private var title: String {
+        model.selected?.label ?? (model.isDraft ? "New chat" : "No chat open")
+    }
+
+    private var subtitle: String {
+        model.selected.map(subtitle(for:)) ?? (model.isDraft ? "The dashboard names it from the first message." : "")
+    }
+
     private var detail: some View {
+        VStack(spacing: 0) {
+            header
+            detailBody
+        }
+    }
+
+    @ViewBuilder
+    private var detailBody: some View {
         switch model.transcriptState {
         case .loading:
             ProgressView("Loading the chat…")

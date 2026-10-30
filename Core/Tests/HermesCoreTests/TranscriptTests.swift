@@ -331,3 +331,32 @@ struct TextParsingTests {
         #expect(TextParsing.argumentContext(#"{"command":"   "}"#) == "")
     }
 }
+
+@Suite("A turn that worked before it answered")
+struct WorkBlockTests {
+    @Test("Thinking and calls between the words become one block, and text stays out of it")
+    func grouping() {
+        let parts: [Part] = [
+            .reasoning("смотрю на сборку"),
+            .tool(ToolRun(id: "a", name: "terminal", context: "$ xcodebuild", output: "FAILED")),
+            .tool(ToolRun(id: "b", name: "read_file", context: "Package.swift")),
+            .text("Сборка падает вот тут."),
+            .tool(ToolRun(id: "c", name: "terminal", context: "$ git status")),
+            .reasoning("и ещё раз")
+        ]
+        let blocks = TranscriptBlocking.blocks(of: parts)
+        #expect(blocks.count == 3)
+        guard case .work(let first) = blocks[0] else { Issue.record("first is not work"); return }
+        #expect(first.count == 3)
+        guard case .text(let words) = blocks[1] else { Issue.record("second is not text"); return }
+        #expect(words == "Сборка падает вот тут.")
+        guard case .work(let last) = blocks[2] else { Issue.record("third is not work"); return }
+        #expect(last.count == 2)
+    }
+
+    @Test("An answer of words alone has no block to open")
+    func wordsOnly() {
+        let blocks = TranscriptBlocking.blocks(of: [.text("Готово.")])
+        #expect(blocks.count == 1)
+    }
+}

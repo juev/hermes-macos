@@ -26,6 +26,8 @@ public enum Theme {
         public static let sessionMeta = SwiftUI.Font.system(size: 11, weight: .regular)
         public static let sectionLabel = SwiftUI.Font.system(size: 11, weight: .semibold)
         public static let detailTitle = SwiftUI.Font.system(size: 15, weight: .semibold)
+        /// The name of the chat above its transcript: read once, never clipped.
+        public static let chatTitle = SwiftUI.Font.system(size: 14, weight: .semibold)
     }
 
     public enum Metrics {

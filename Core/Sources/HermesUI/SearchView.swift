@@ -74,24 +74,56 @@ public struct SearchFieldChrome: View {
 
 /// What the search found: the chat, the message's role and the line around the match.
 public struct SearchResultsView: View {
-    public let hits: [SearchHit]
+    public let matches: [ChatMatch]
     public let query: String
     @Binding public var selection: SessionSummary.ID?
 
-    public init(hits: [SearchHit], query: String, selection: Binding<SessionSummary.ID?>) {
-        self.hits = hits
+    public init(matches: [ChatMatch], query: String, selection: Binding<SessionSummary.ID?>) {
+        self.matches = matches
         self.query = query
         _selection = selection
     }
 
     public var body: some View {
         List(selection: $selection) {
-            ForEach(hits) { hit in
-                SearchResultRow(hit: hit, query: query)
-                    .tag(hit.session.id)
+            ForEach(matches) { match in
+                ChatMatchRow(match: match, query: query)
+                    .tag(match.chat.id)
             }
         }
         .listStyle(.sidebar)
+    }
+}
+
+/// A chat a search found: its name, what it is, and the one line of it that matched.
+public struct ChatMatchRow: View {
+    public let match: ChatMatch
+    public let query: String
+
+    public init(match: ChatMatch, query: String) {
+        self.match = match
+        self.query = query
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(match.chat.label)
+                    .font(Theme.Fonts.sessionTitle)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if match.matches > 1 {
+                    Text("\(match.matches) matches")
+                        .font(Theme.Fonts.sessionMeta)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            Text(Highlighting.attributed(PlainText.of(match.best.oneLine), query: query))
+                .font(Theme.Fonts.sessionMeta)
+                .lineLimit(2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 3)
     }
 }
 

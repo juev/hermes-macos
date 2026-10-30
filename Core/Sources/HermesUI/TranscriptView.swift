@@ -29,7 +29,14 @@ public struct TranscriptView: View {
                 // A stream of words grows under the fold; this is what the view keeps in sight.
                 Color.clear.frame(height: 1).id(Self.bottomID)
             }
-            .onAppear { scrollToEnd(proxy, animated: false) }
+            .onAppear {
+                // Let the content measure before asking where its end is: scrolling a stack that has
+                // not been laid out yet is what left a chat blank until the person nudged it.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(40))
+                    scrollToEnd(proxy, animated: false)
+                }
+            }
             .onChange(of: items) { _, _ in
                 if followsTheEnd { scrollToEnd(proxy, animated: true) }
             }
@@ -91,8 +98,19 @@ public struct TranscriptContent: View {
     }
 
     public var body: some View {
-        LazyVStack(alignment: .leading, spacing: Theme.Metrics.turnSpacing) {
-            ForEach(Array(TranscriptDays.group(items).enumerated()), id: \.offset) { _, entry in
+        stack(TranscriptDays.group(items))
+            .padding(.horizontal, Theme.Metrics.contentPadding)
+            .padding(.vertical, 24)
+            .frame(maxWidth: Theme.Metrics.readingWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
+    }
+
+    /// A chat of a few hundred messages is drawn whole: a lazy stack that is culled while the view is
+    /// still measuring is what left a chat blank until the person scrolled it. Only a transcript too
+    /// long to draw at once is lazy, and then it has been measured before the culling matters.
+    @ViewBuilder
+    private func stack(_ entries: [TranscriptDays.Entry]) -> some View {
+        let rows = ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
                 if let day = entry.day {
                     DaySeparator(day: day)
                 }
@@ -104,12 +122,12 @@ public struct TranscriptContent: View {
                 case .cronReport(let report):
                     CronReportView(report: report)
                 }
-            }
         }
-        .frame(maxWidth: Theme.Metrics.readingWidth, alignment: .leading)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, Theme.Metrics.contentPadding)
-        .padding(.vertical, 24)
+        if items.count > 400 {
+            LazyVStack(alignment: .leading, spacing: Theme.Metrics.turnSpacing) { rows }
+        } else {
+            VStack(alignment: .leading, spacing: Theme.Metrics.turnSpacing) { rows }
+        }
     }
 }
 
@@ -282,15 +300,15 @@ struct AnswerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Metrics.partSpacing) {
-            ForEach(Array(turn.parts.enumerated()), id: \.offset) { _, part in
-                switch part {
-                case .reasoning(let text):
-                    ReasoningView(text: text)
+            ForEach(Array(TranscriptBlocking.blocks(of: turn.parts).enumerated()), id: \.offset) { _, block in
+                switch block {
                 case .text(let text):
                     // The directive is a card under the answer, not a line of it.
                     MarkdownText(TextParsing.stripMedia(text))
-                case .tool(let run):
-                    ToolRunView(run: run)
+                case .work(let parts):
+                    // Everything the answer did on its way — thinking, commands, tool runs — is one
+                    // line until asked for: the answer is what the person came to read.
+                    WorkGroupView(parts: parts)
                 }
             }
             if !turn.deliveredFiles.isEmpty {
@@ -303,6 +321,83 @@ struct AnswerView: View {
             Button("Copy the answer") { Clipboard.copy(turn.text) }
             if let reasoning = turn.reasoning { Button("Copy the reasoning") { Clipboard.copy(reasoning) } }
         }
+    }
+
+}
+
+/// One line for everything a turn did on the way: how many calls, which of them, and whether it also
+/// thought out loud. Opening it gives the runs and the reasoning back, each as it was.
+struct WorkGroupView: View {
+    let parts: [Part]
+    @State private var expanded = false
+
+    private var runs: [ToolRun] {
+        parts.compactMap { part in
+            if case .tool(let run) = part { return run }
+            return nil
+        }
+    }
+
+    private var hasReasoning: Bool {
+        parts.contains { part in
+            if case .reasoning = part { return true }
+            return false
+        }
+    }
+
+    private var summary: String {
+        var pieces: [String] = []
+        if !runs.isEmpty {
+            let names = runs.prefix(3).map(\.name).joined(separator: ", ")
+            let more = runs.count > 3 ? " +" + String(runs.count - 3) : ""
+            pieces.append("\(runs.count) tool run\(runs.count == 1 ? "" : "s") · \(names)\(more)")
+        }
+        if hasReasoning { pieces.append("reasoning") }
+        return pieces.joined(separator: " · ")
+    }
+
+    private var unfinished: Bool {
+        runs.contains { !$0.done }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.snappy(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    if unfinished {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text(summary)
+                        .font(Theme.Fonts.reasoningLabel)
+                        .foregroundStyle(Theme.Palette.accentText)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    switch part {
+                    case .reasoning(let text):
+                        ReasoningView(text: text)
+                    case .tool(let run):
+                        ToolRunView(run: run)
+                    case .text:
+                        EmptyView()
+                    }
+                }
+                .padding(.leading, 12)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

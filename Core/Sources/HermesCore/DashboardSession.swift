@@ -80,26 +80,40 @@ public actor DashboardSession: SessionCredentials {
 
     /// The chats the sidebar shows, newest activity first.
     public func sessions(limit: Int = 50, offset: Int = 0, archived: Archive = .exclude) async throws -> SessionPage {
+        SessionPage(try await sessionsPayload(limit: limit, offset: offset, archived: archived))
+    }
+
+    /// The same payload the page is read from, so the window can keep it for the next launch.
+    public func sessionsPayload(limit: Int = 50, offset: Int = 0, archived: Archive = .exclude) async throws -> JSONValue {
         let token = try await accessToken()
-        let json = try await client.get("api/sessions", query: [
+        return try await client.get("api/sessions", query: [
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "order", value: "recent"),
             URLQueryItem(name: "archived", value: archived.rawValue),
             URLQueryItem(name: "min_messages", value: "1")
         ], token: token)
-        return SessionPage(json)
     }
 
     /// The stored history of one chat, oldest first.
     public func messages(sessionID: String, limit: Int = 500) async throws -> [StoredMessage] {
+        StoredMessage.page(try await messagesPayload(sessionID: sessionID, limit: limit))
+    }
+
+    /// The same payload the history is read from, so a chat can be painted from disk next time.
+    public func messagesPayload(sessionID: String, limit: Int = 500) async throws -> JSONValue {
         let token = try await accessToken()
-        let json = try await client.get("api/sessions/\(sessionID)/messages", query: [
+        return try await client.get("api/sessions/\(sessionID)/messages", query: [
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "order", value: "oldest"),
             URLQueryItem(name: "inline_images", value: "false")
         ], token: token)
-        return StoredMessage.page(json)
+    }
+
+    /// The models this dashboard can answer on, and the one it is set to.
+    public func modelOptions() async throws -> ModelOptions {
+        let token = try await accessToken()
+        return ModelOptions(try await client.get("api/model/options", token: token))
     }
 
     /// The chats whose stored text matches [query], with the line around each match.

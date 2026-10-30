@@ -132,13 +132,17 @@ struct SnapshotTests {
     func search() throws {
         let hits = [
             SearchHit(session: Self.sampleSessions[0], snippet: "...command not found\n---\n#!/bin/sh\n# >>>Hermes<<< wrapper", role: "tool"),
+            SearchHit(session: Self.sampleSessions[0], snippet: "Hermes падает на линковке", role: "assistant"),
             SearchHit(session: Self.sampleSessions[1], snippet: "Сборка падает на линковке, Hermes 27.1 не видит SDK", role: "assistant"),
             SearchHit(session: Self.sampleSessions[2], snippet: "утренний дайджест по hermes: 12 сообщений", role: "user")
         ]
         let list = VStack(alignment: .leading, spacing: 0) {
             SearchFieldChrome(text: "hermes")
-            ForEach(hits) { hit in
-                SearchResultRow(hit: hit, query: "hermes")
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            Divider()
+            ForEach(SearchGrouping.byChat(hits)) { match in
+                ChatMatchRow(match: match, query: "hermes")
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -234,6 +238,27 @@ struct SnapshotTests {
         renderer.scale = 2
         try write(renderer.nsImage, to: "connection.png")
         #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("connection.png").path))
+    }
+
+    @Test("A turn that worked before it answered")
+    func workGroup() throws {
+        let turn = AssistantTurn(key: "w1", parts: [
+            .reasoning("Сборка упала на тестах, смотрю, что именно."),
+            .tool(ToolRun(id: "t1", name: "terminal", context: "$ xcodebuild test", output: "FAILED", done: true, durationSeconds: 42.5, summary: "12 tests failed")),
+            .tool(ToolRun(id: "t2", name: "read_file", context: "Tests/SearchTests.swift", output: "line 42", done: true, durationSeconds: 0.2)),
+            .text("Провайдеры не совпадают: сервер отдаёт `slug`, а клиент читает `provider`."),
+            .tool(ToolRun(id: "t3", name: "terminal", context: "$ git diff", output: "", done: true, durationSeconds: 0.1))
+        ])
+        let content = TranscriptContent(items: [.assistant(turn)])
+            .padding(Theme.Metrics.contentPadding)
+            .frame(width: 760, alignment: .leading)
+            .background(Color(nsColor: .textBackgroundColor))
+            .environment(\.colorScheme, .light)
+
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2
+        try write(renderer.nsImage, to: "work.png")
+        #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("work.png").path))
     }
 
     @Test("The composer")
