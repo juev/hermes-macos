@@ -27,15 +27,17 @@ not copied into this README.
   the Keychain under the dashboard's address. The second launch opens straight into the chats with what
   it kept; if the tokens have run out it says so instead of opening a browser by itself.
 - **Chats** — the sidebar groups them the way a long list is read (pinned, today, yesterday, the last
-  week and month, then by month and year), with the archive behind a button, a search field over the
-  dashboard's own index, and rename, archive and delete on a right click. A pin is kept on this Mac,
-  because a plain dashboard has nowhere to keep it.
-- **Reading** — the answer is set for reading, Markdown is rendered rather than shown, a tool run folds
-  to one line and opens its output on a click, reasoning waits behind a chip, each day of a long chat
-  opens with its own separator, and the transcript follows a streaming answer until you scroll away.
+  week and month, then by month and year), with the archive behind a button, a pinned search field
+  whose results read as chats rather than as messages, and rename, archive and delete on a right
+  click. A pin is kept on this Mac, because a plain dashboard has nowhere to keep it.
+- **Reading** — the answer is set for reading and Markdown is rendered rather than shown. What a turn
+  did on the way — its thinking, its commands, its tool runs — folds into a single line that opens on a
+  click, so an answer is what the eye lands on. Each day of a long chat opens with its own separator,
+  the transcript follows a streaming answer until you scroll away, and a chat paints from disk before
+  the dashboard answers.
 - **Writing** — Return sends, Option+Return starts a new line, the paperclip attaches a picture or a
-  file, ⌘N starts a chat, and an approval, a choice or a secret from the agent arrives as a card above
-  the field with a banner behind it.
+  file, ⌘N starts a chat at once, the toolbar picks the model the chat answers on, and an approval, a
+  choice or a secret from the agent arrives as a card above the field with a banner behind it.
 - **Files** — a file the agent delivers is drawn under the answer, a picture showing itself; a click
   fetches it with the token and opens it.
 - **Tailscale** — a dashboard published only on the tailnet is told apart from one that is down: the
