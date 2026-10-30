@@ -34,7 +34,14 @@ else
 		| base64 -d -i - -o "$work/identity.p12"
 fi
 
-if security find-certificate -c "Hermes macOS" -a "$keychain" >/dev/null 2>&1; then
+# A certificate without its key is not an identity, and importing over one makes a duplicate: the
+# stray certificate goes first.
+if security find-certificate -c "Hermes macOS" -a "$keychain" >/dev/null 2>&1 \
+	&& ! security find-key -c "Hermes macOS" >/dev/null 2>&1; then
+	security delete-certificate -c "Hermes macOS" "$keychain" >/dev/null 2>&1 || true
+fi
+
+if security find-key -c "Hermes macOS" >/dev/null 2>&1; then
 	echo "the identity \"Hermes macOS\" is already in $keychain"
 	exit 0
 fi
