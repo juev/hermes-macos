@@ -24,7 +24,9 @@ public struct TranscriptView: View {
         self.onAskAgain = onAskAgain
     }
 
-    @State private var followsTheEnd = true
+    @State private var follow = TranscriptFollow()
+    /// True while a hand is on the scroll wheel or the trackpad: the only word on who moved the view.
+    @State private var personScrolling = false
 
     public var body: some View {
         ScrollViewReader { proxy in
@@ -36,26 +38,42 @@ public struct TranscriptView: View {
             // Every chat opens at its end, and stays there while the wire fills it in: the cached
             // history arrives first and the dashboard's may be longer, so the end is asked for twice.
             .task(id: chatID) {
-                followsTheEnd = true
+                follow.showEnd()
                 try? await Task.sleep(for: .milliseconds(30))
-                scrollToEnd(proxy, animated: false)
+                scrollToEnd(proxy)
                 try? await Task.sleep(for: .milliseconds(150))
                 // Unconditional: the measurement of a stack that has just changed can report the top
                 // as the end for a moment, and a chat that opens in the middle is what that costs.
-                scrollToEnd(proxy, animated: false)
+                scrollToEnd(proxy)
             }
-            .onChange(of: items) { _, _ in
-                if followsTheEnd { scrollToEnd(proxy, animated: true) }
+            .onChange(of: items) { old, new in
+                // What the person just wrote is theirs: it comes into view even from the middle of
+                // the history, and it is the line the answer will be read from.
+                if Self.appendedByPerson(from: old, to: new) { follow.sent() }
             }
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 80
-            } action: { _, atEnd in
-                followsTheEnd = atEnd
+            .onScrollPhaseChange { _, phase in
+                // A phase is the only certain word on a hand on the wheel: `animating` is a scroll
+                // the view asked for itself, and `idle` is nothing moving at all.
+                personScrolling = phase == .tracking || phase == .interacting || phase == .decelerating
+            }
+            // A message appended to a transcript longer than the window is why this exists at all: the
+            // end it has to reach does not exist until the layout that appended the message has been
+            // made, and a scroll asked for before that lands where the end used to be.
+            .onScrollGeometryChange(for: TranscriptFollow.Frame.self) { geometry in
+                TranscriptFollow.Frame(
+                    offset: geometry.contentOffset.y,
+                    contentHeight: geometry.contentSize.height,
+                    viewportHeight: geometry.containerSize.height
+                )
+            } action: { old, new in
+                if follow.changed(from: old, to: new, personIsScrolling: personScrolling) == .showEnd {
+                    scrollToEnd(proxy)
+                }
             }
             .overlay(alignment: .bottomTrailing) {
-                if !followsTheEnd {
+                if !follow.isFollowing {
                     Button {
-                        scrollToEnd(proxy, animated: true)
+                        scrollToEnd(proxy)
                     } label: {
                         Label("Latest", systemImage: "arrow.down")
                             .font(Theme.Fonts.sessionMeta)
@@ -71,17 +89,21 @@ public struct TranscriptView: View {
         }
     }
 
+    /// The person's own message, appended: the last turn is theirs and there are more turns than
+    /// there were. Anything else — an answer arriving, a history read again — is not worth leaving
+    /// the history for.
+    static func appendedByPerson(from old: [ChatItem], to new: [ChatItem]) -> Bool {
+        guard new.count > old.count, let last = new.last, case .user = last else { return false }
+        return true
+    }
+
     private static let bottomID = "transcript-bottom"
 
-    private func scrollToEnd(_ proxy: ScrollViewProxy, animated: Bool) {
-        if animated {
-            withAnimation(.snappy(duration: 0.2)) {
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
-            }
-        } else {
-            proxy.scrollTo(Self.bottomID, anchor: .bottom)
-        }
-        followsTheEnd = true
+    /// No animation on purpose: a scroll in flight is a view that is neither where it was nor where
+    /// it is going, and the frame it reports on the way is not a place the person chose.
+    private func scrollToEnd(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(Self.bottomID, anchor: .bottom)
+        follow.showEnd()
     }
 }
 
