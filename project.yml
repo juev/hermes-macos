@@ -31,6 +31,9 @@ targets:
           - Hermes.entitlements
     dependencies:
       - package: HermesCore
+        product: HermesCore
+      - package: HermesCore
+        product: HermesUI
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.evsyukov.hermes.macos

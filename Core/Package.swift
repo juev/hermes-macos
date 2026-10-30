@@ -8,11 +8,16 @@ let package = Package(
     name: "HermesCore",
     platforms: [.macOS(.v15)],
     products: [
-        .library(name: "HermesCore", targets: ["HermesCore"])
+        .library(name: "HermesCore", targets: ["HermesCore"]),
+        .library(name: "HermesUI", targets: ["HermesUI"])
     ],
     targets: [
         .target(name: "HermesCore"),
-        .testTarget(name: "HermesCoreTests", dependencies: ["HermesCore"], resources: [.copy("Fixtures")])
+        // The look of the chat: typography, colours, the rows of a transcript. SwiftUI only, so a
+        // snapshot can be rendered without a window and looked at.
+        .target(name: "HermesUI", dependencies: ["HermesCore"]),
+        .testTarget(name: "HermesCoreTests", dependencies: ["HermesCore"], resources: [.copy("Fixtures")]),
+        .testTarget(name: "HermesUITests", dependencies: ["HermesUI"])
     ],
     swiftLanguageModes: [.v6]
 )

@@ -27,7 +27,7 @@ final class ConnectionModel {
     private(set) var needsTailscale = false
     private var task: Task<Void, Never>?
     private var gatewaySession: GatewaySession?
-    private var dashboardSession: DashboardSession?
+    private(set) var dashboardSession: DashboardSession?
 
     var endpoint: Endpoint? { Endpoint(address: address) }
 
@@ -119,7 +119,7 @@ final class ConnectionModel {
         } catch is CancellationError {
             phase = .idle
         } catch {
-            phase = .failed(Self.message(for: error))
+            phase = .failed(ErrorMessage.of(error))
         }
     }
 
@@ -135,49 +135,4 @@ final class ConnectionModel {
         )
     }
 
-    /// What a person can do about the failure, not the failure itself.
-    static func message(for error: Error) -> String {
-        if let error = error as? SignInError {
-            switch error {
-            case .refused(_, let description):
-                return description ?? "The identity provider refused the sign-in."
-            case .stateMismatch:
-                return "The browser came back with another sign-in. Try again."
-            case .notNeeded:
-                return "This dashboard does not ask for a sign-in."
-            }
-        }
-        if let error = error as? DashboardError {
-            if error.providerUnavailable {
-                return "The dashboard cannot reach its identity provider right now. Try again in a moment."
-            }
-            return error.detail
-        }
-        if let error = error as? LoopbackError {
-            switch error {
-            case .timedOut:
-                return "The browser did not come back. Try again."
-            case .cancelled:
-                return "The sign-in was cancelled."
-            case .socket(let code):
-                return "The sign-in could not listen on the loopback address (error \(code))."
-            }
-        }
-        if let error = error as? URLError {
-            switch error.code {
-            case .cannotConnectToHost, .cannotFindHost:
-                return "No dashboard answers at that address."
-            case .notConnectedToInternet:
-                return "This Mac is not connected to the network."
-            case .timedOut:
-                return "The dashboard did not answer in time."
-            default:
-                return error.localizedDescription
-            }
-        }
-        if error is DecodingError {
-            return "The dashboard answered something this client does not understand."
-        }
-        return error.localizedDescription
-    }
 }

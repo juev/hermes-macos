@@ -4,9 +4,9 @@ import SwiftUI
 struct HermesApp: App {
     var body: some Scene {
         WindowGroup {
-            ConnectView()
+            RootView()
         }
-        .defaultSize(width: 760, height: 560)
+        .defaultSize(width: 1180, height: 760)
         .commands {
             CommandGroup(after: .appInfo) {
                 Divider()

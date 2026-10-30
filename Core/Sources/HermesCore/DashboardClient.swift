@@ -83,6 +83,14 @@ public struct DashboardClient: Sendable {
         return try json(response) { try Tokens(serverAnswer: $0, previous: tokens) }
     }
 
+    /// A `GET` that carries the token, for the routes that read the dashboard's own state.
+    public func get(_ path: String, query: [URLQueryItem] = [], token: String?) async throws -> JSONValue {
+        var headers: [String: String] = [:]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        let response = try await transport.send(HTTPRequest(url: endpoint.url(path, query: query), headers: headers))
+        return try json(response) { $0 }
+    }
+
     /// The one-time ticket that opens the socket (`POST /api/auth/ws-ticket`).
     public func socketTicket(token: String) async throws -> String {
         let request = HTTPRequest(method: "POST", url: endpoint.url("api/auth/ws-ticket"), headers: ["Authorization": "Bearer \(token)"])

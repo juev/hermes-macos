@@ -1,0 +1,220 @@
+import HermesCore
+import SwiftUI
+
+/// The history of one chat, drawn as turns: the person's messages and the agent's answers.
+public struct TranscriptView: View {
+    public let items: [ChatItem]
+
+    public init(items: [ChatItem]) {
+        self.items = items
+    }
+
+    public var body: some View {
+        ScrollView {
+            TranscriptContent(items: items)
+        }
+    }
+}
+
+/// The turns themselves, without the scroll view around them: what a snapshot can draw.
+public struct TranscriptContent: View {
+    public let items: [ChatItem]
+
+    public init(items: [ChatItem]) {
+        self.items = items
+    }
+
+    public var body: some View {
+        LazyVStack(alignment: .leading, spacing: Theme.Metrics.turnSpacing) {
+            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                switch item {
+                case .user(let bubble):
+                    MessageView(bubble: bubble)
+                case .assistant(let turn):
+                    AnswerView(turn: turn)
+                }
+            }
+        }
+        .frame(maxWidth: Theme.Metrics.readingWidth, alignment: .leading)
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, Theme.Metrics.contentPadding)
+        .padding(.vertical, 24)
+    }
+}
+
+/// What the person wrote: a bubble on the right, as far from the answer as the turn spacing.
+struct MessageView: View {
+    let bubble: UserBubble
+
+    var body: some View {
+        HStack {
+            Spacer(minLength: 80)
+            VStack(alignment: .leading, spacing: 8) {
+                if !bubble.text.isEmpty {
+                    Text(bubble.text)
+                        .font(Theme.Fonts.message)
+                        .lineSpacing(Theme.Metrics.lineSpacing)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !bubble.attachments.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(bubble.attachments) { attachment in
+                            AttachmentChip(attachment: attachment)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Theme.Palette.messageBackground, in: RoundedRectangle(cornerRadius: Theme.Metrics.bubbleRadius, style: .continuous))
+        }
+    }
+}
+
+struct AttachmentChip: View {
+    let attachment: Attachment
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: attachment.isImage ? "photo" : "doc")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            Text(attachment.name)
+                .font(Theme.Fonts.toolContext)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.secondary)
+        }
+    }
+}
+
+/// One answer: its reasoning, its words and the tools it ran, in the order it produced them.
+struct AnswerView: View {
+    let turn: AssistantTurn
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Metrics.partSpacing) {
+            ForEach(Array(turn.parts.enumerated()), id: \.offset) { _, part in
+                switch part {
+                case .reasoning(let text):
+                    ReasoningView(text: text)
+                case .text(let text):
+                    MarkdownText(text)
+                case .tool(let run):
+                    ToolRunView(run: run)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// What the model thought before it answered: a folded line that opens on a click, never louder
+/// than the answer itself.
+struct ReasoningView: View {
+    let text: String
+    @State private var expanded = false
+
+    private var lines: Int {
+        text.components(separatedBy: .newlines).count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.snappy(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                    Text("Reasoning")
+                        .font(Theme.Fonts.reasoningLabel)
+                        .foregroundStyle(Theme.Palette.accentText)
+                    if !expanded {
+                        Text("\(lines) line\(lines == 1 ? "" : "s")")
+                            .font(Theme.Fonts.sessionMeta)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                Text(text)
+                    .font(Theme.Fonts.reasoning)
+                    .lineSpacing(2)
+                    .foregroundStyle(Theme.Palette.accentText)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(Theme.Palette.reasoningRule)
+                            .frame(width: 2)
+                    }
+            }
+        }
+    }
+}
+
+/// A tool the agent ran: one line while folded — its name and what it acted on — and its output
+/// under it once opened.
+struct ToolRunView: View {
+    let run: ToolRun
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.snappy(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "wrench.and.screwdriver")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    Text(run.name)
+                        .font(Theme.Fonts.toolName)
+                    if !run.context.isEmpty {
+                        Text(run.context)
+                            .font(Theme.Fonts.toolContext)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expanded ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(expanded ? "Hide the output" : "Show the output")
+
+            if expanded {
+                if let output = run.output, !output.isEmpty {
+                    ScrollView(.vertical) {
+                        Text(output)
+                            .font(Theme.Fonts.toolOutput)
+                            .lineSpacing(2)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: Theme.Metrics.toolOutputMaxHeight)
+                    .padding(10)
+                    .background(Theme.Palette.toolBackground, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                } else {
+                    Text(run.done ? "No output." : "Running…")
+                        .font(Theme.Fonts.toolContext)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 16)
+                }
+            }
+        }
+        .padding(.vertical, 1)
+    }
+}

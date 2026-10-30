@@ -71,6 +71,30 @@ public actor DashboardSession: SessionCredentials {
         // Anything else, 503 above all, keeps the tokens: the identity provider may come back.
     }
 
+    /// The chats the sidebar shows, newest activity first.
+    public func sessions(limit: Int = 50, offset: Int = 0) async throws -> SessionPage {
+        let token = try await accessToken()
+        let json = try await client.get("api/sessions", query: [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "offset", value: String(offset)),
+            URLQueryItem(name: "order", value: "recent"),
+            URLQueryItem(name: "archived", value: "exclude"),
+            URLQueryItem(name: "min_messages", value: "1")
+        ], token: token)
+        return SessionPage(json)
+    }
+
+    /// The stored history of one chat, oldest first.
+    public func messages(sessionID: String, limit: Int = 500) async throws -> [StoredMessage] {
+        let token = try await accessToken()
+        let json = try await client.get("api/sessions/\(sessionID)/messages", query: [
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "order", value: "oldest"),
+            URLQueryItem(name: "inline_images", value: "false")
+        ], token: token)
+        return StoredMessage.page(json)
+    }
+
     public func socketTicket() async throws -> String? {
         guard let token = try await accessToken() else { return nil }
         return try await client.socketTicket(token: token)

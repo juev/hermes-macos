@@ -5,7 +5,7 @@ import SwiftUI
 /// Everything is checked before it goes over the network, so a typo costs a moment rather than a
 /// browser sign-in that fails at the end.
 struct ConnectView: View {
-    @State private var model = ConnectionModel()
+    @Bindable var model: ConnectionModel
     @FocusState private var addressFocused: Bool
 
     var body: some View {
@@ -136,5 +136,5 @@ struct ConnectView: View {
 }
 
 #Preview {
-    ConnectView()
+    ConnectView(model: ConnectionModel())
 }
