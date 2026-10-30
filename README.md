@@ -55,9 +55,9 @@ dashboard (`HERMES_DOC_SCREENSHOTS=1 swift test --package-path Core --filter Doc
 
 ## Install
 
-A release is a disk image in [Releases](../../releases). It is **not notarized**: the build of this
-draft is signed ad-hoc, so the first launch needs System Settings → Privacy & Security → *Open Anyway*,
-or
+A release is a disk image in [Releases](../../releases). It is signed with an identity this project
+owns and is **not notarized** — there is no Apple Developer ID behind it — so the first launch needs
+System Settings → Privacy & Security → *Open Anyway*, or
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Hermes.app
@@ -89,6 +89,7 @@ not copied into this README.
   - `hermes-live` — an executable that runs the client's own code against a live dashboard.
 - `App/` — the window: the connection, the chat model, notifications, the Keychain.
 - `project.yml` — the XcodeGen description. `Hermes.xcodeproj` is generated from it and not committed.
+- `docs/signing.md` — the identity releases are signed with, and how to make another.
 
 ## Checking
 
