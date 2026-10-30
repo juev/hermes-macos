@@ -17,6 +17,7 @@ jobs:
 
       - name: Toolchain
         run: |
+          brew install xcodegen
           xcodebuild -version
           swift --version
 
