@@ -109,16 +109,8 @@ final class ChatModel {
         sendError = nil
         question = nil
 
-        // A chat left while its turn runs keeps its session: the turn's end deserves a banner, and
-        // closing the session could stop it. Any other chat is let go.
         chat = nil
-        if let previousChat {
-            if previousRunning, let previousID, previousID != id {
-                await watch(previousChat, storedID: previousID)
-            } else {
-                await previousChat.leave()
-            }
-        }
+        await release(previousChat, storedID: previousRunning ? previousID : nil, opening: id)
         running = false
 
         do {
@@ -177,8 +169,10 @@ final class ChatModel {
 
     /// Starts a chat that has no name yet: the dashboard names it from the first message.
     func newChat() async {
-        await chat?.leave()
+        let previous = chat
+        let previousID = selection
         chat = nil
+        await release(previous, storedID: running ? previousID : nil, opening: nil)
         selection = nil
         selected = nil
         items = []
@@ -202,13 +196,22 @@ final class ChatModel {
         }
     }
 
-    /// The first turn of a new chat is over: the dashboard has stored it, so it can be opened by the
-    /// id the sidebar knows and named like any other.
+    /// The first turn of a new chat is over: the dashboard has stored it, so the list is read again
+    /// and the chat is opened by the id the sidebar knows, named like any other.
     private func adoptDraft() async {
         isDraft = false
         await load()
-        if let newest = sessions.first {
-            await open(newest.id)
+    }
+
+    /// What becomes of a chat the window is leaving: one whose turn still runs keeps its session for
+    /// the end of that turn — closing it could stop the turn, and its end deserves a banner — while
+    /// any other is let go. [opening] is the chat being opened, which a watcher is not kept for.
+    private func release(_ leaving: ChatSession?, storedID: String?, opening: String?) async {
+        guard let leaving else { return }
+        if let storedID, storedID != opening {
+            await watch(leaving, storedID: storedID)
+        } else {
+            await leaving.leave()
         }
     }
 
@@ -533,7 +536,9 @@ final class ChatModel {
 
     func reload() async {
         await load()
-        if let selection {
+        // Re-opening the chat under the person would close its live session, and a turn in it with
+        // it; a turn that runs is left alone, and the list is what a refresh is for.
+        if let selection, !running {
             await open(selection)
         }
     }
