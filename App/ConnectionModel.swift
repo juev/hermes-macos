@@ -28,6 +28,8 @@ final class ConnectionModel {
     private var task: Task<Void, Never>?
     private let bookmarks = ServerBookmarks()
     private(set) var gatewaySession: GatewaySession?
+    /// The one listener of the socket, which feeds every chat the window holds.
+    private(set) var chatHub: ChatHub?
     private(set) var dashboardSession: DashboardSession?
 
     var endpoint: Endpoint? { Endpoint(address: address) }
@@ -92,12 +94,14 @@ final class ConnectionModel {
             }
         )
         gatewaySession = session
+        chatHub = ChatHub(gateway: session)
         await session.start()
     }
 
     private func stopSocket() {
         let session = gatewaySession
         gatewaySession = nil
+        chatHub = nil
         dashboardSession = nil
         if let session {
             Task { await session.stop() }

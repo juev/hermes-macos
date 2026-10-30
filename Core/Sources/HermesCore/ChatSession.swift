@@ -41,13 +41,22 @@ public actor ChatSession {
     }
 
     private let gateway: GatewaySession
+    private let hub: ChatHub?
     private var liveID: String?
     private var sink: (@Sendable (GatewayEvent) -> Void)?
     private var questions: (@Sendable (AgentQuestion) -> Void)?
     private var pending: [String: ServerRequest] = [:]
 
+    /// A chat whose events come straight from the session, for one chat at a time.
     public init(gateway: GatewaySession) {
         self.gateway = gateway
+        self.hub = nil
+    }
+
+    /// A chat registered with [hub], so more than one can be open at once and each gets its own events.
+    public init(gateway: GatewaySession, hub: ChatHub) {
+        self.gateway = gateway
+        self.hub = hub
     }
 
     /// Who hears the events of this chat. Events of other sessions are not passed on.
@@ -87,16 +96,7 @@ public actor ChatSession {
             throw ChatError.noLiveSession
         }
         liveID = live
-        await gateway.setHandlers(
-            onEvent: { [weak self] event in
-                guard let self else { return }
-                Task { await self.receive(event) }
-            },
-            onRequest: { [weak self] request in
-                guard let self else { return }
-                Task { await self.receive(request) }
-            }
-        )
+        await listen()
 
         let info = answer["info"]
         return Joined(
@@ -142,16 +142,7 @@ public actor ChatSession {
             throw ChatError.noLiveSession
         }
         liveID = live
-        await gateway.setHandlers(
-            onEvent: { [weak self] event in
-                guard let self else { return }
-                Task { await self.receive(event) }
-            },
-            onRequest: { [weak self] request in
-                guard let self else { return }
-                Task { await self.receive(request) }
-            }
-        )
+        await listen()
         return live
     }
 
@@ -192,17 +183,39 @@ public actor ChatSession {
     /// Lets the live session go, so the gateway does not hold it for a client that closed the chat.
     public func leave() async {
         guard let liveID else { return }
-        _ = try? await gateway.call("session.close", params: ["session_id": .string(liveID)])
+        if let hub {
+            await hub.unregister(liveID: liveID)
+        } else {
+            await gateway.setHandlers(onEvent: nil, onRequest: nil)
+        }
         self.liveID = nil
-        await gateway.setHandlers(onEvent: nil, onRequest: nil)
+        _ = try? await gateway.call("session.close", params: ["session_id": .string(liveID)])
     }
 
-    private func receive(_ event: GatewayEvent) {
+    /// Who hears this chat's events and questions: the hub when there is one, the session alone otherwise.
+    private func listen() async {
+        if let hub, let liveID {
+            await hub.register(self, liveID: liveID)
+            return
+        }
+        await gateway.setHandlers(
+            onEvent: { [weak self] event in
+                guard let self else { return }
+                Task { await self.receive(event) }
+            },
+            onRequest: { [weak self] request in
+                guard let self else { return }
+                Task { await self.receive(request) }
+            }
+        )
+    }
+
+    func receive(_ event: GatewayEvent) {
         guard let liveID, event.sessionID == liveID else { return }
         sink?(event)
     }
 
-    private func receive(_ request: ServerRequest) {
+    func receive(_ request: ServerRequest) {
         // A question of another chat is not this chat's to answer.
         if let session = request.params["session_id"]?.scalarString, session != liveID { return }
         guard let question = AgentQuestion(request) else {

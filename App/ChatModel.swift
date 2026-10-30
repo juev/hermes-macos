@@ -16,6 +16,7 @@ final class ChatModel {
 
     private let session: DashboardSession
     private let gateway: GatewaySession
+    private let hub: ChatHub
     /// The push of this dashboard, with the topic and keys it needs.
     let push: PushModel
     private var chat: ChatSession?
@@ -30,6 +31,10 @@ final class ChatModel {
     private(set) var searchState: Loading = .ready
     private var searchTask: Task<Void, Never>?
     private var admin: ChatAdmin?
+    /// The chats left while their turn still ran: their session stays open so its end is noticed.
+    private var watched: [String: ChatSession] = [:]
+    /// Which chat holds the question on screen, which is not always the chat the window shows.
+    private var questionOwners: [String: ChatSession] = [:]
     private let pins = LocalPins()
 
     /// What the person typed into the search field; an empty one shows the chats again.
@@ -49,9 +54,10 @@ final class ChatModel {
         !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    init(session: DashboardSession, gateway: GatewaySession) {
+    init(session: DashboardSession, gateway: GatewaySession, hub: ChatHub) {
         self.session = session
         self.gateway = gateway
+        self.hub = hub
         self.push = PushModel(session: session)
     }
 
@@ -91,14 +97,28 @@ final class ChatModel {
     }
 
     func open(_ id: String) async {
+        let previousID = selection
+        let previousChat = chat
+        let previousRunning = running
+
         selection = id
         selected = sessions.first { $0.id == id }
         transcriptState = .loading
         items = []
         status = nil
         sendError = nil
-        await chat?.leave()
+        question = nil
+
+        // A chat left while its turn runs keeps its session: the turn's end deserves a banner, and
+        // closing the session could stop it. Any other chat is let go.
         chat = nil
+        if let previousChat {
+            if previousRunning, let previousID, previousID != id {
+                await watch(previousChat, storedID: previousID)
+            } else {
+                await previousChat.leave()
+            }
+        }
         running = false
 
         do {
@@ -110,8 +130,17 @@ final class ChatModel {
             return
         }
 
+        // Coming back to a chat whose turn never ended: its session is still the live one.
+        if let existing = watched.removeValue(forKey: id) {
+            chat = existing
+            await wire(existing)
+            running = true
+            transcriptState = .ready
+            return
+        }
+
         // The stored history does not know about a turn that runs now: the join does.
-        let chat = ChatSession(gateway: gateway)
+        let chat = ChatSession(gateway: gateway, hub: hub)
         self.chat = chat
         do {
             let joined = try await chat.join(storedID: id)
@@ -160,7 +189,7 @@ final class ChatModel {
         transcriptState = .ready
         isDraft = false
 
-        let chat = ChatSession(gateway: gateway)
+        let chat = ChatSession(gateway: gateway, hub: hub)
         self.chat = chat
         await wire(chat)
         do {
@@ -187,11 +216,41 @@ final class ChatModel {
         await chat.setEventSink { [weak self] event in
             Task { @MainActor in self?.apply(event) }
         }
-        await chat.setQuestionSink { [weak self] question in
+        await chat.setQuestionSink { [weak self, weak chat] question in
             Task { @MainActor in
-                self?.question = question
+                guard let self else { return }
+                if let chat { self.questionOwners[question.id] = chat }
+                self.question = question
                 if case .approval(let approval) = question {
-                    TurnNotifier.shared.questionAsked(chat: self?.selected?.label ?? "Hermes", approval: approval)
+                    TurnNotifier.shared.questionAsked(chat: self.selected?.label ?? "Hermes", approval: approval)
+                }
+            }
+        }
+    }
+
+    /// Keeps a chat's session for the rest of its turn and says how the turn ended. The transcript is
+    /// not drawn: the chat is not on screen, only its end matters.
+    private func watch(_ chat: ChatSession, storedID: String) async {
+        let label = sessions.first { $0.id == storedID }?.label ?? "Hermes"
+        let watcher = ChatWatcher()
+        watched[storedID] = chat
+
+        await chat.setEventSink { [weak self, weak chat] event in
+            Task { @MainActor in
+                watcher.apply(event)
+                guard event.type == "message.complete" else { return }
+                self?.watched[storedID] = nil
+                TurnNotifier.shared.turnFinished(chat: label, answer: watcher.text)
+                if let chat { await chat.leave() }
+            }
+        }
+        await chat.setQuestionSink { [weak self, weak chat] question in
+            Task { @MainActor in
+                guard let self else { return }
+                if let chat { self.questionOwners[question.id] = chat }
+                self.question = question
+                if case .approval(let approval) = question {
+                    TurnNotifier.shared.questionAsked(chat: label, approval: approval)
                 }
             }
         }
@@ -230,27 +289,40 @@ final class ChatModel {
         }
     }
 
+    /// The chat that asked the question on screen: it need not be the one the window shows.
+    private func owner(of question: AgentQuestion) -> ChatSession? {
+        questionOwners[question.id] ?? chat
+    }
+
     /// Answers the question the agent waits on.
     func answer(_ choice: String) async {
         guard let question else { return }
+        let chat = owner(of: question)
+        questionOwners[question.id] = nil
         await chat?.answer(question, with: AgentAnswer.approval(choice))
         self.question = nil
     }
 
     func answerClarify(_ answers: [String: String?]) async {
         guard let question else { return }
+        let chat = owner(of: question)
+        questionOwners[question.id] = nil
         await chat?.answer(question, with: AgentAnswer.clarify(answers))
         self.question = nil
     }
 
     func answerSecret(_ value: String) async {
         guard let question else { return }
+        let chat = owner(of: question)
+        questionOwners[question.id] = nil
         await chat?.answer(question, with: AgentAnswer.secret(value))
         self.question = nil
     }
 
     func dismissQuestion() async {
         guard let question else { return }
+        let chat = owner(of: question)
+        questionOwners[question.id] = nil
         switch question {
         case .approval:
             await chat?.answer(question, with: AgentAnswer.approval("deny"))

@@ -17,10 +17,11 @@ struct ChatScreen: View {
     init(
         session: DashboardSession,
         gateway: GatewaySession,
+        hub: ChatHub,
         gatewayState: GatewaySession.State = .ready,
         onDisconnect: @escaping () -> Void = {}
     ) {
-        _model = State(initialValue: ChatModel(session: session, gateway: gateway))
+        _model = State(initialValue: ChatModel(session: session, gateway: gateway, hub: hub))
         self.gatewayState = gatewayState
         self.onDisconnect = onDisconnect
     }

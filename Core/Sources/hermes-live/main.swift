@@ -191,7 +191,9 @@ Task.detached {
                 transport: URLSessionSocketTransport()
             )
             await gatewaySession.start()
-            let chat = ChatSession(gateway: gatewaySession)
+            // Through the hub, as the window does it: that is the path that feeds the open chat.
+            let hub = ChatHub(gateway: gatewaySession)
+            let chat = ChatSession(gateway: gatewaySession, hub: hub)
             let joined = try await chat.join(storedID: newest.id)
             reporter.report(
                 !joined.liveID.isEmpty,

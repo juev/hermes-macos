@@ -12,10 +12,14 @@ struct RootView: View {
 
     @ViewBuilder
     private var content: some View {
-        if case .connected = connection.phase, let session = connection.dashboardSession, let gateway = connection.gatewaySession {
+        if case .connected = connection.phase,
+           let session = connection.dashboardSession,
+           let gateway = connection.gatewaySession,
+           let hub = connection.chatHub {
             ChatScreen(
                 session: session,
                 gateway: gateway,
+                hub: hub,
                 gatewayState: connection.gateway,
                 onDisconnect: { connection.disconnect() }
             )
