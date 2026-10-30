@@ -74,7 +74,7 @@ public struct SessionRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(session.label)
+                    Text(PlainText.of(session.label))
                         .font(Theme.Fonts.sessionTitle)
                         .lineLimit(1)
                         .truncationMode(.tail)

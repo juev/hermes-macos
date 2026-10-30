@@ -117,7 +117,7 @@ public struct SearchResultRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            Text(Highlighting.attributed(hit.oneLine, query: query))
+            Text(Highlighting.attributed(PlainText.of(hit.oneLine), query: query))
                 .font(Theme.Fonts.sessionMeta)
                 .lineLimit(2)
                 .foregroundStyle(.secondary)

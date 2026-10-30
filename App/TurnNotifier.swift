@@ -26,7 +26,8 @@ final class TurnNotifier {
         let content = UNMutableNotificationContent()
         let platform = push.platform ?? ""
         content.title = platform.isEmpty ? "Hermes" : "Hermes · \(platform)"
-        content.body = push.oneLine.isEmpty ? (push.job ?? "A turn is finished.") : push.oneLine
+        let words = PlainText.of(push.oneLine)
+        content.body = words.isEmpty ? (push.job ?? "A turn is finished.") : words
         content.sound = .default
         center.add(UNNotificationRequest(identifier: "push-\(UUID().uuidString)", content: content, trigger: nil))
     }
@@ -49,7 +50,7 @@ final class TurnNotifier {
 
         let content = UNMutableNotificationContent()
         content.title = NotificationText.title(chat: chat)
-        content.body = NotificationText.preview(answer)
+        content.body = NotificationText.preview(PlainText.of(answer))
         content.sound = .default
         center.add(UNNotificationRequest(identifier: "turn-\(UUID().uuidString)", content: content, trigger: nil))
     }
