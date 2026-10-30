@@ -3,6 +3,16 @@
 Rules for anyone changing this repository, human or agent. Build and test commands belong in
 `README.md` and here once the app target exists.
 
+## Build and test
+
+- `scripts/build.sh` regenerates `Hermes.xcodeproj` from `project.yml` and builds
+  `build/Build/Products/Debug/Hermes.app`. The project file is generated and stays out of git.
+- `scripts/test.sh` runs `swift test` on `Core`, the package with the protocol and the model. It is
+  headless and takes seconds; a change to the wire behaviour or to how a transcript is parsed goes with
+  a test there, not only with a build.
+- The app target is thin on purpose: windows, menus, typography. Anything decidable from a frame or a
+  string belongs in `Core`, where it can be tested without a screen.
+
 ## The server contract has one home
 
 The wire behaviour of the Hermes Agent dashboard — routes, sign-in, socket methods, event shapes — is
