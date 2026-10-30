@@ -60,7 +60,18 @@ decodes to a file whose SHA-256 is the same as the one that signed 0.1.0, and it
 
 ## Signing a local build
 
-`scripts/dev-signing.sh create` makes a *separate* self-signed identity for this Mac (`Hermes Dev`),
-which is what stops the Keychain asking for a password after every rebuild: an ad-hoc signed binary is
-a new app to the Keychain each time, and a signed one is not. `scripts/build.sh` signs with it when it
-exists. It is not the release identity and is not meant to be.
+A binary signed by nobody is a new app to the Keychain at every rebuild, so it asks for the app's
+password again, and again after the next build. The cure is one identity everywhere:
+
+```sh
+scripts/import-signing-identity.sh   # brings the release identity in from Bitwarden, through rbw
+scripts/build.sh                    # signs the app with "Hermes macOS" and says so
+```
+
+`scripts/build.sh` signs the app by hand after Xcode: the identity is not trusted by the system
+policy, so Xcode itself falls back to ad-hoc, while `codesign` is happy to sign with it. The first
+access to the app's Keychain item after a change of identity asks once; choose *Always Allow*, and it
+stops.
+
+`scripts/dev-signing.sh` is still there for a Mac without the release identity: it makes a local
+`Hermes Dev` certificate, and the build signs with that when `Hermes macOS` is absent.
