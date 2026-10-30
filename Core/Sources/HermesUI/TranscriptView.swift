@@ -4,14 +4,22 @@ import SwiftUI
 /// The history of one chat, drawn as turns: the person's messages and the agent's answers.
 public struct TranscriptView: View {
     public let items: [ChatItem]
+    public let loadFile: (@Sendable (String) async throws -> Data)?
+    public let openFile: (@Sendable (String) -> Void)?
 
-    public init(items: [ChatItem]) {
+    public init(
+        items: [ChatItem],
+        loadFile: (@Sendable (String) async throws -> Data)? = nil,
+        openFile: (@Sendable (String) -> Void)? = nil
+    ) {
         self.items = items
+        self.loadFile = loadFile
+        self.openFile = openFile
     }
 
     public var body: some View {
         ScrollView {
-            TranscriptContent(items: items)
+            TranscriptContent(items: items, loadFile: loadFile, openFile: openFile)
         }
     }
 }
@@ -19,9 +27,17 @@ public struct TranscriptView: View {
 /// The turns themselves, without the scroll view around them: what a snapshot can draw.
 public struct TranscriptContent: View {
     public let items: [ChatItem]
+    public let loadFile: (@Sendable (String) async throws -> Data)?
+    public let openFile: (@Sendable (String) -> Void)?
 
-    public init(items: [ChatItem]) {
+    public init(
+        items: [ChatItem],
+        loadFile: (@Sendable (String) async throws -> Data)? = nil,
+        openFile: (@Sendable (String) -> Void)? = nil
+    ) {
         self.items = items
+        self.loadFile = loadFile
+        self.openFile = openFile
     }
 
     public var body: some View {
@@ -31,7 +47,7 @@ public struct TranscriptContent: View {
                 case .user(let bubble):
                     MessageView(bubble: bubble)
                 case .assistant(let turn):
-                    AnswerView(turn: turn)
+                    AnswerView(turn: turn, loadFile: loadFile, openFile: openFile)
                 }
             }
         }
@@ -92,6 +108,8 @@ struct AttachmentChip: View {
 /// One answer: its reasoning, its words and the tools it ran, in the order it produced them.
 struct AnswerView: View {
     let turn: AssistantTurn
+    let loadFile: (@Sendable (String) async throws -> Data)?
+    let openFile: (@Sendable (String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Metrics.partSpacing) {
@@ -100,10 +118,15 @@ struct AnswerView: View {
                 case .reasoning(let text):
                     ReasoningView(text: text)
                 case .text(let text):
-                    MarkdownText(text)
+                    // The directive is a card under the answer, not a line of it.
+                    MarkdownText(TextParsing.stripMedia(text))
                 case .tool(let run):
                     ToolRunView(run: run)
                 }
+            }
+            if !turn.deliveredFiles.isEmpty {
+                DeliveredFilesView(paths: turn.deliveredFiles, load: loadFile, open: openFile)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

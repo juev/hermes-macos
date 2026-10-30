@@ -109,7 +109,11 @@ struct ChatScreen: View {
                 ContentUnavailableView("Nothing here yet", systemImage: "bubble.left", description: Text("This chat has no stored messages."))
             } else {
                 VStack(spacing: 0) {
-                    TranscriptView(items: model.items)
+                    TranscriptView(
+                        items: model.items,
+                        loadFile: { path in try await model.fileData(path) },
+                        openFile: { path in model.openFile(path) }
+                    )
                     ComposerView(
                         text: Binding(get: { model.draft }, set: { model.draft = $0 }),
                         isRunning: model.running,

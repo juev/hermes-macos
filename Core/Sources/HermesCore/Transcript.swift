@@ -83,6 +83,16 @@ public struct AssistantTurn: Sendable, Equatable {
         .first { !$0.isEmpty }
     }
 
+    /// The answer with the `MEDIA:` lines gone: the files are drawn as cards under it.
+    public var displayText: String {
+        TextParsing.stripMedia(text)
+    }
+
+    /// Files the agent delivered with `MEDIA:` directives, in order and without repeats.
+    public var deliveredFiles: [String] {
+        TextParsing.mediaPaths(in: text)
+    }
+
     public var tools: [ToolRun] {
         parts.compactMap { part in
             if case .tool(let run) = part { return run }

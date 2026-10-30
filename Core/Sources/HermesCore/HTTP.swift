@@ -46,6 +46,30 @@ public struct HTTPResponse: Sendable, Equatable {
     }
 }
 
+/// Reading a file the agent wrote, with the token the rest of the client uses.
+public struct FileDownload: Sendable {
+    public let endpoint: Endpoint
+    public let transport: HTTPTransport
+
+    public init(endpoint: Endpoint, transport: HTTPTransport = URLSessionTransport()) {
+        self.endpoint = endpoint
+        self.transport = transport
+    }
+
+    /// The bytes of a file on the dashboard, by the absolute path the agent named.
+    public func data(path: String, token: String?) async throws -> Data {
+        var headers: [String: String] = [:]
+        if let token { headers["Authorization"] = "Bearer \(token)" }
+        let response = try await transport.send(HTTPRequest(
+            url: endpoint.url("api/files/download", query: [URLQueryItem(name: "path", value: path)]),
+            headers: headers,
+            timeout: 60
+        ))
+        guard response.isSuccess else { throw DashboardError(status: response.status, response: response) }
+        return response.body
+    }
+}
+
 public protocol HTTPTransport: Sendable {
     func send(_ request: HTTPRequest) async throws -> HTTPResponse
 }

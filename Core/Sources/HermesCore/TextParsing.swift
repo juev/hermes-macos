@@ -69,6 +69,10 @@ public enum TextParsing {
         return (kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines), unique)
     }
 
+    /// The longest value still read as a path. Prose that mentions `MEDIA:` can look like a
+    /// directive, and a path of two thousand characters is prose.
+    public static let longestPath = 512
+
     /// Paths the agent delivered with `MEDIA:` directives, in order and without repeats.
     public static func mediaPaths(in text: String) -> [String] {
         var seen = Set<String>()
@@ -77,8 +81,12 @@ public enum TextParsing {
             var value = String(match.1).trimmingCharacters(in: .whitespaces)
             value = value.trimmingCharacters(in: CharacterSet(charactersIn: "`\"'"))
             value = value.trimmingCharacters(in: CharacterSet(charactersIn: ".,;:!?)\"'"))
-            // A bare word is not a file: it needs a directory or an extension.
-            guard value.contains("/") || value.range(of: #"\.[^.]"#, options: .regularExpression) != nil else { continue }
+            // A bare word is not a file: it needs a directory or an extension, and a path with a
+            // line break in it is a paragraph that happened to mention the directive.
+            guard value.count <= longestPath,
+                  !value.contains(where: \.isWhitespace),
+                  value.contains("/") || value.range(of: #"\.[^.]"#, options: .regularExpression) != nil
+            else { continue }
             if seen.insert(value).inserted { paths.append(value) }
         }
         return paths

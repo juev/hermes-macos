@@ -139,6 +139,43 @@ struct SnapshotTests {
         #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("search.png").path))
     }
 
+    @Test("The files the agent delivered")
+    func deliveredFiles() throws {
+        // A picture made on the spot, so the card shows what a loaded image looks like.
+        let picture = NSImage(size: NSSize(width: 208, height: 136))
+        picture.lockFocus()
+        NSColor.systemTeal.setFill()
+        NSRect(x: 0, y: 0, width: 208, height: 136).fill()
+        NSColor.white.withAlphaComponent(0.8).setFill()
+        NSRect(x: 24, y: 40, width: 160, height: 10).fill()
+        NSRect(x: 24, y: 62, width: 110, height: 10).fill()
+        picture.unlockFocus()
+        let png = try #require(picture.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:))?.representation(using: .png, properties: [:]))
+
+        let files = DeliveredFilesView(
+            paths: ["/opt/hermes/reports/build.png", "/opt/hermes/reports/0.22.5.md", "/opt/hermes/reports/logs.tar.gz"],
+            load: { path in
+                if path.hasSuffix(".png") { return png }
+                throw URLError(.fileDoesNotExist)
+            },
+            open: { _ in }
+        )
+        let view = VStack(alignment: .leading, spacing: 16) {
+            Text("Build report")
+                .font(Theme.Fonts.answer)
+            files
+        }
+        .padding(24)
+        .frame(width: 480, alignment: .leading)
+        .background(Color(nsColor: .textBackgroundColor))
+        .environment(\.colorScheme, .light)
+
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        try write(renderer.nsImage, to: "files.png")
+        #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("files.png").path))
+    }
+
     @Test("The composer")
     func composer() throws {
         let composer = VStack(spacing: 0) {

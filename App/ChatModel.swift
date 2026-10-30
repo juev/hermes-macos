@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import HermesCore
 import Observation
@@ -189,6 +190,28 @@ final class ChatModel {
     func openSearchResult(_ id: String) async {
         query = ""
         await open(id)
+    }
+
+    /// The bytes of a file the agent delivered.
+    func fileData(_ path: String) async throws -> Data {
+        let token = try await session.accessToken()
+        return try await FileDownload(endpoint: session.endpoint).data(path: path, token: token)
+    }
+
+    /// Writes a delivered file where the system can open it.
+    func openFile(_ path: String) {
+        Task {
+            guard let data = try? await fileData(path) else { return }
+            let name = path.split(separator: "/").last.map(String.init) ?? "file"
+            let destination = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+            do {
+                try data.write(to: destination)
+                NSWorkspace.shared.open(destination)
+                NSApp.activate(ignoringOtherApps: true)
+            } catch {
+                sendError = "The file could not be written: \(error.localizedDescription)"
+            }
+        }
     }
 
     func reload() async {
