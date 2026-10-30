@@ -1,0 +1,9 @@
+.DS_Store
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+.swiftpm/
+
+# The global git ignore excludes AGENTS.md; these rules belong to the repository.
+!AGENTS.md
