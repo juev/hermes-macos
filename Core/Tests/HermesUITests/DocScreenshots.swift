@@ -71,6 +71,7 @@ struct DocScreenshots {
 
         try write(consoleWindow(dark: false), "window.png", width: 1180)
         try write(consoleWindow(dark: true), "window-dark.png", width: 1180)
+        try write(tableAnswer, "table.png", width: 860)
         try write(transcriptLight, "transcript.png", width: 900)
         try write(transcriptDark, "transcript-dark.png", width: 900)
         try write(sessionsList, "sessions.png", width: 320)
@@ -169,6 +170,26 @@ struct DocScreenshots {
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
         )
         .environment(\.colorScheme, scheme)
+    }
+
+    /// An answer with a table in it: the shape the agent reaches for when it compares things.
+    private var tableAnswer: some View {
+        MarkdownText("""
+        All four hosts are quiet at the moment.
+
+        | Host | Load average | CPU | RAM free | Disk |
+        |---|---|---:|---:|---:|
+        | build-1 | 0.42 | 3% | 47 GB | 341 GB |
+        | build-2 | 0.11 | 1% | 3,8 GB | 61 GB |
+        | jobs | 1.08 | 12% | 900 MB | 24 GB |
+        | archive | 0.07 | 2% | 2,1 GB | 8,4 TB |
+
+        Only `jobs` is above where it usually sits: the nightly backup upload is running.
+        """)
+        .padding(Theme.Metrics.contentPadding)
+        .frame(width: 800, alignment: .leading)
+        .background(Self.papers)
+        .environment(\.colorScheme, .light)
     }
 
     private var transcriptLight: some View {

@@ -16,7 +16,8 @@ dashboard's HTTP and its JSON-RPC socket.
 - **Chats** — the sidebar groups them the way a long list is read (pinned, today, yesterday, the last
   week and month, then by month and year), with the archive behind a button, a pinned search field, and
   rename, archive and delete on a right click.
-- **Reading** — the answer is set for reading and Markdown is rendered rather than shown. What a turn
+- **Reading** — the answer is set for reading and Markdown is rendered rather than shown: headings,
+  lists, quotes, code, and tables whose numbers line up on the right by themselves. What a turn
   did on the way — its thinking, its commands, its tool runs — folds into a single line that opens on a
   click, so the answer is what the eye lands on. Each day of a long chat opens with its own separator,
   the transcript follows a streaming answer until you scroll away, and a chat paints from disk before
@@ -42,8 +43,10 @@ dashboard's HTTP and its JSON-RPC socket.
 | The chat list, grouped by date, pinned chats first. | Search over the dashboard's index: one row per chat. |
 | ![An approval from the agent](docs/screenshots/question.png) | ![A file the agent delivered](docs/screenshots/files.png) |
 | A command the agent stops before running. | A file the agent delivered, opened with one click. |
-| ![The composer](docs/screenshots/composer.png) | ![The window in the dark](docs/screenshots/window-dark.png) |
-| The composer, with a file attached. | The same window in the dark. |
+| ![The composer](docs/screenshots/composer.png) | ![A table in an answer](docs/screenshots/table.png) |
+| The composer, with a file attached. | A table, with its numbers on the right. |
+| ![The window in the dark](docs/screenshots/window-dark.png) | |
+| The same window in the dark. | |
 
 Every picture is drawn by a test from synthetic data — no address, no chat and no name of a real
 dashboard (`HERMES_DOC_SCREENSHOTS=1 swift test --package-path Core --filter DocScreenshots`).
