@@ -17,7 +17,10 @@ let package = Package(
         // snapshot can be rendered without a window and looked at.
         .target(name: "HermesUI", dependencies: ["HermesCore"]),
         .testTarget(name: "HermesCoreTests", dependencies: ["HermesCore"], resources: [.copy("Fixtures")]),
-        .testTarget(name: "HermesUITests", dependencies: ["HermesUI"])
+        .testTarget(name: "HermesUITests", dependencies: ["HermesUI"]),
+        // A check against a live dashboard: the client's own code, one call after another, printing
+        // what worked and what did not. `scripts/smoke.sh` runs it with the tokens of the Keychain.
+        .executableTarget(name: "hermes-live", dependencies: ["HermesCore"])
     ],
     swiftLanguageModes: [.v6]
 )
