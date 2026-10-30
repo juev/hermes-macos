@@ -12,7 +12,7 @@ public final class KeychainVault: @unchecked Sendable {
 
     static func logRead(_ account: String) {
         reads += 1
-        Logger().info("keychain read \(reads, privacy: .public) for account \(account, privacy: .public)")
+        Logger(subsystem: "org.evsyukov.hermes.macos", category: "secrets").info("keychain read \(reads, privacy: .public) for account \(account, privacy: .public)")
     }
     /// What the push needs to exist between launches.
     public struct PushSecrets: Codable, Sendable, Equatable {
