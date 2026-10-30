@@ -24,6 +24,10 @@ struct RootView: View {
                 onDisconnect: { connection.disconnect() }
             )
                 .id(session.endpoint)
+        } else if connection.isRestoring {
+            // The address is known and the tokens are being read: asking for the address again would
+            // be asking a question the app can answer itself.
+            RestoringView(address: connection.address)
         } else {
             ConnectView(model: connection)
         }

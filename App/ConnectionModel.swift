@@ -14,6 +14,10 @@ final class ConnectionModel {
         case failed(String)
     }
 
+    /// True while the dashboard of the last launch is being opened again: the window shows what it
+    /// kept instead of asking for an address it already knows.
+    private(set) var isRestoring = false
+
     var address = "" {
         didSet {
             if case .failed = phase { phase = .idle }
@@ -52,6 +56,8 @@ final class ConnectionModel {
         Log.app.notice("restoring \(last, privacy: .public)")
         address = last
         guard let endpoint = Endpoint(address: last) else { return }
+        isRestoring = true
+        defer { isRestoring = false }
         await connect(to: endpoint, allowingSignIn: false)
     }
 
