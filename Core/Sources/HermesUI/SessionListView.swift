@@ -3,24 +3,27 @@ import SwiftUI
 
 /// The chats of the dashboard, newest activity first.
 public struct SessionListView: View {
-    public let sessions: [SessionSummary]
+    public let sections: [Sidebar.Section]
     @Binding public var selection: SessionSummary.ID?
     public let onRename: ((SessionSummary) -> Void)?
     public let onArchive: ((SessionSummary, Bool) -> Void)?
     public let onDelete: ((SessionSummary) -> Void)?
+    public let onPin: ((SessionSummary, Bool) -> Void)?
 
     public init(
-        sessions: [SessionSummary],
+        sections: [Sidebar.Section],
         selection: Binding<SessionSummary.ID?>,
         onRename: ((SessionSummary) -> Void)? = nil,
         onArchive: ((SessionSummary, Bool) -> Void)? = nil,
-        onDelete: ((SessionSummary) -> Void)? = nil
+        onDelete: ((SessionSummary) -> Void)? = nil,
+        onPin: ((SessionSummary, Bool) -> Void)? = nil
     ) {
-        self.sessions = sessions
+        self.sections = sections
         _selection = selection
         self.onRename = onRename
         self.onArchive = onArchive
         self.onDelete = onDelete
+        self.onPin = onPin
     }
 
     /// A sidebar reads ages at a glance: "now", "12 min", "3 h", "4 d", then the date.
@@ -37,15 +40,24 @@ public struct SessionListView: View {
 
     public var body: some View {
         List(selection: $selection) {
-            ForEach(sessions) { session in
-                SessionRow(session: session)
-                    .tag(session.id)
-                    .contextMenu {
-                        Button("Rename…") { onRename?(session) }
-                        Button(session.archived ? "Unarchive" : "Archive") { onArchive?(session, !session.archived) }
-                        Divider()
-                        Button("Delete…", role: .destructive) { onDelete?(session) }
+            ForEach(sections) { section in
+                Section {
+                    ForEach(section.chats) { session in
+                        SessionRow(session: session)
+                            .tag(session.id)
+                            .contextMenu {
+                                Button(session.pinned ? "Unpin" : "Pin") { onPin?(session, !session.pinned) }
+                                Button("Rename…") { onRename?(session) }
+                                Button(session.archived ? "Unarchive" : "Archive") { onArchive?(session, !session.archived) }
+                                Divider()
+                                Button("Delete…", role: .destructive) { onDelete?(session) }
+                            }
                     }
+                } header: {
+                    Text(Sidebar.title(for: section.group))
+                        .font(Theme.Fonts.sectionLabel)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .listStyle(.sidebar)

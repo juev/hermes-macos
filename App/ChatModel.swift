@@ -30,10 +30,16 @@ final class ChatModel {
     private(set) var searchState: Loading = .ready
     private var searchTask: Task<Void, Never>?
     private var admin: ChatAdmin?
+    private let pins = LocalPins()
 
     /// What the person typed into the search field; an empty one shows the chats again.
     var query = "" {
         didSet { scheduleSearch() }
+    }
+
+    /// The chats split for the sidebar, with the pins this Mac keeps.
+    var sections: [Sidebar.Section] {
+        Sidebar.sections(sessions)
     }
 
     var isSearching: Bool {
@@ -63,7 +69,10 @@ final class ChatModel {
         sessionsState = .loading
         do {
             let page = try await session.sessions()
-            sessions = page.sessions
+            let pinnedHere = pins.pins(for: server)
+            sessions = page.sessions.map { chat in
+                !chat.pinned && pinnedHere.contains(chat.id) ? chat.settingPinned(true) : chat
+            }
             sessionsState = .ready
             if selection == nil, let first = sessions.first {
                 await open(first.id)
@@ -301,6 +310,12 @@ final class ChatModel {
         }
     }
 
+    /// Pins a chat on this Mac, where a plain dashboard refuses to keep it.
+    func pin(_ summary: SessionSummary, pinned: Bool) {
+        pins.set(summary.id, pinned: pinned, for: server)
+        sessions = sessions.map { $0.id == summary.id ? $0.settingPinned(pinned) : $0 }
+    }
+
     /// Gives a chat another name, over the open chat's session or a join made for the call.
     func rename(_ summary: SessionSummary, to title: String) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -350,6 +365,8 @@ final class ChatModel {
             sendError = ErrorMessage.of(error)
         }
     }
+
+    private var server: String { session.endpoint.base.absoluteString }
 
     private func administrator() -> ChatAdmin {
         if let admin { return admin }

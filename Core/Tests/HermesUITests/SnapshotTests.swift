@@ -89,7 +89,9 @@ struct SnapshotTests {
         SessionSummary(id: "s3", title: "Матрица: утренний дайджест", preview: "", source: "matrix",
                        model: "deepseek-flash", lastActive: Date(timeIntervalSinceNow: -18_000), messageCount: 212),
         SessionSummary(id: "s4", title: "Телеграм: что нового в memcue", preview: "", source: "telegram",
-                       model: "deepseek-flash", lastActive: Date(timeIntervalSinceNow: -86_400), messageCount: 43)
+                       model: "deepseek-flash", lastActive: Date(timeIntervalSinceNow: -86_400), messageCount: 43),
+        SessionSummary(id: "s5", title: "Разбор инцидента на loffe", preview: "", source: "android",
+                       model: "deepseek-flash", lastActive: Date(timeIntervalSinceNow: -8 * 86_400), messageCount: 61)
     ]
 
     private func write(_ image: NSImage?, to name: String) throws {
@@ -237,11 +239,19 @@ struct SnapshotTests {
     @Test("A row of the chat list")
     func sessions() throws {
         let list = VStack(alignment: .leading, spacing: 0) {
-            ForEach(Self.sampleSessions) { session in
-                SessionRow(session: session)
+            ForEach(Sidebar.sections(Self.sampleSessions), id: \.group) { section in
+                Text(Sidebar.title(for: section.group))
+                    .font(Theme.Fonts.sectionLabel)
+                    .foregroundStyle(.tertiary)
                     .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 12)
+                    .padding(.bottom, 2)
+                ForEach(section.chats) { session in
+                    SessionRow(session: session)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .frame(width: 320, alignment: .leading)

@@ -14,7 +14,7 @@ public protocol SessionCredentials: Sendable {
 /// The tokens of one dashboard, kept in memory and in the Keychain, refreshed a minute before they
 /// run out, and dropped when the server says the session is over.
 public actor DashboardSession: SessionCredentials {
-    public let endpoint: Endpoint
+    public nonisolated let endpoint: Endpoint
     private let client: DashboardClient
     private let storage: (any TokenStorage)?
     private let skew: TimeInterval

@@ -99,7 +99,7 @@ struct ChatScreen: View {
 
     private var sessions: some View {
         SessionListView(
-            sessions: model.sessions,
+            sections: model.sections,
             selection: $selection,
             onRename: { session in
                 newTitle = session.title.isEmpty ? session.label : session.title
@@ -110,6 +110,9 @@ struct ChatScreen: View {
             },
             onDelete: { session in
                 deleting = session
+            },
+            onPin: { session, pinned in
+                model.pin(session, pinned: pinned)
             }
         )
             .overlay {
