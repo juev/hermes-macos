@@ -7,8 +7,11 @@ struct ChatScreen: View {
     @State private var model: ChatModel
     @State private var selection: SessionSummary.ID?
 
-    init(session: DashboardSession, gateway: GatewaySession) {
+    let onDisconnect: () -> Void
+
+    init(session: DashboardSession, gateway: GatewaySession, onDisconnect: @escaping () -> Void = {}) {
         _model = State(initialValue: ChatModel(session: session, gateway: gateway))
+        self.onDisconnect = onDisconnect
     }
 
     var body: some View {
@@ -34,6 +37,14 @@ struct ChatScreen: View {
             if selection != id { selection = id }
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    onDisconnect()
+                } label: {
+                    Label("Change server", systemImage: "rectangle.portrait.and.arrow.right")
+                }
+                .help("Close this dashboard and go back to the address")
+            }
             ToolbarItem(placement: .navigation) {
                 if let selected = model.selected {
                     VStack(alignment: .leading) {

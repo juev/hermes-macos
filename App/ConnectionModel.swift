@@ -26,6 +26,7 @@ final class ConnectionModel {
     /// True when the address is on the tailnet and this Mac has no tailnet route.
     private(set) var needsTailscale = false
     private var task: Task<Void, Never>?
+    private let bookmarks = ServerBookmarks()
     private(set) var gatewaySession: GatewaySession?
     private(set) var dashboardSession: DashboardSession?
 
@@ -36,9 +37,34 @@ final class ConnectionModel {
     var canConnect: Bool { endpoint != nil && !isBusy }
 
     func connect() {
-        guard let endpoint, canConnect else { return }
+        connect(allowingSignIn: true)
+    }
+
+    /// Opens the dashboard this Mac used last, without a browser sign-in: if the tokens it kept are
+    /// still good the person lands in the chats, and if they are not the connect screen says so.
+    func restore() async {
+        guard address.isEmpty, let last = bookmarks.last else {
+            Log.app.notice("no dashboard remembered")
+            return
+        }
+        Log.app.notice("restoring \(last, privacy: .public)")
+        address = last
+        guard let endpoint = Endpoint(address: last) else { return }
+        await connect(to: endpoint, allowingSignIn: false)
+    }
+
+    /// Lets the dashboard go: the window goes back to the address, the tokens stay in the Keychain.
+    func disconnect() {
         task?.cancel()
-        task = Task { await connect(to: endpoint) }
+        stopSocket()
+        phase = .idle
+        gateway = .idle
+    }
+
+    private func connect(allowingSignIn: Bool) {
+        guard let endpoint, canConnect || !allowingSignIn else { return }
+        task?.cancel()
+        task = Task { await connect(to: endpoint, allowingSignIn: allowingSignIn) }
     }
 
     /// True when the stored tokens are gone or refused; false when they still open the dashboard.
@@ -61,6 +87,7 @@ final class ConnectionModel {
             endpoint: endpoint,
             credentials: dashboard,
             onState: { [weak self] state in
+                Log.app.notice("socket \(String(describing: state), privacy: .public)")
                 Task { @MainActor in self?.gateway = state }
             }
         )
@@ -89,7 +116,7 @@ final class ConnectionModel {
         phase = .idle
     }
 
-    private func connect(to endpoint: Endpoint) async {
+    private func connect(to endpoint: Endpoint, allowingSignIn: Bool = true) async {
         phase = .checking
         needsTailscale = false
         gateway = .idle
@@ -121,6 +148,10 @@ final class ConnectionModel {
             try? await session.load()
             if status.authRequired {
                 if try await needsBrowserSignIn(session) {
+                    guard allowingSignIn else {
+                        phase = .failed("The sign-in of this dashboard has run out. Connect again to sign in.")
+                        return
+                    }
                     phase = .waitingForBrowser
                     let signed = try await signIn(to: client, providers: status.authProviders)
                     try await session.adopt(signed)
@@ -128,10 +159,13 @@ final class ConnectionModel {
                 }
             }
             try await openSocket(endpoint: endpoint, session: session)
+            bookmarks.remember(endpoint.base.absoluteString)
             phase = .connected(status)
+            Log.app.notice("connected to \(endpoint.base.absoluteString, privacy: .public) v\(status.version ?? "-", privacy: .public)")
         } catch is CancellationError {
             phase = .idle
         } catch {
+            Log.app.error("connect failed: \(ErrorMessage.of(error), privacy: .public)")
             phase = .failed(ErrorMessage.of(error))
         }
     }
