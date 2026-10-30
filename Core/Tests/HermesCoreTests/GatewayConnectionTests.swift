@@ -9,6 +9,12 @@ final class FakeSocket: SocketConnection, @unchecked Sendable {
     private var waiter: CheckedContinuation<String?, Never>?
     private var finished = false
     private var outbox: [String] = []
+    private var failure: Error?
+
+    /// Makes the next frame fail, the way a refused handshake does.
+    func fail(with error: Error) {
+        lock.withLock { failure = error }
+    }
 
     func push(_ text: String) {
         let waiting: CheckedContinuation<String?, Never>? = lock.withLock {
@@ -45,7 +51,10 @@ final class FakeSocket: SocketConnection, @unchecked Sendable {
     }
 
     func next() async throws -> String? {
-        await withCheckedContinuation { continuation in
+        if let failure = lock.withLock({ failure }) {
+            throw failure
+        }
+        return await withCheckedContinuation { continuation in
             var frame: String?
             var ended = false
             lock.withLock {

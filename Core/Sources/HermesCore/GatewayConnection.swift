@@ -7,6 +7,8 @@ public enum GatewayError: Error, Equatable {
     case closed
     /// No answer arrived in time.
     case timedOut(method: String)
+    /// The dashboard refused the handshake itself: 403 for a socket without a good ticket.
+    case refused(status: Int)
 }
 
 /// One connection to `/api/ws`, from the handshake to the last frame.
@@ -34,6 +36,7 @@ public actor GatewayConnection {
     private var ready: GatewayReady?
     private var sessionAuthority = false
     private var ended = false
+    private var endWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
         url: URL,
@@ -113,7 +116,18 @@ public actor GatewayConnection {
 
     public func close() {
         socket?.close()
-        end()
+        end(nil)
+    }
+
+    /// Suspends until the connection ends, for whoever keeps it open: the session that reconnects.
+    public func waitForEnd() async {
+        await withCheckedContinuation { continuation in
+            if ended {
+                continuation.resume()
+            } else {
+                endWaiters.append(continuation)
+            }
+        }
     }
 
     // MARK: - Sending
@@ -141,11 +155,11 @@ public actor GatewayConnection {
             do {
                 text = try await connection.next()
             } catch {
-                end()
+                end(error)
                 return
             }
             guard let text else {
-                end()
+                end(nil)
                 return
             }
             guard let value = try? JSONValue.decode(text), let frame = Frame.parse(value) else { continue }
@@ -188,20 +202,26 @@ public actor GatewayConnection {
         readyWaiter = nil
     }
 
-    /// Ends the connection once, failing everything that waits on it.
-    private func end() {
+    /// Ends the connection once, failing everything that waits on it with [failure] when there is one.
+    private func end(_ failure: Error? = nil) {
         guard !ended else { return }
         ended = true
         heartbeat?.cancel()
         heartbeat = nil
         sessionAuthority = false
+        let reason = failure ?? GatewayError.closed
         let waiting = pending
         pending.removeAll()
         for (_, continuation) in waiting {
-            continuation.resume(throwing: GatewayError.closed)
+            continuation.resume(throwing: reason)
         }
-        readyWaiter?.resume(throwing: GatewayError.closed)
+        readyWaiter?.resume(throwing: reason)
         readyWaiter = nil
+        let finished = endWaiters
+        endWaiters.removeAll()
+        for continuation in finished {
+            continuation.resume()
+        }
     }
 
     private func startHeartbeat() {

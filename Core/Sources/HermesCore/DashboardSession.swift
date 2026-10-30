@@ -1,0 +1,78 @@
+import Foundation
+
+public enum SessionError: Error, Equatable {
+    /// The refresh token is gone or was refused: only the browser sign-in helps now.
+    case signInRequired
+}
+
+/// What a socket needs to come up: the one-time ticket, or nothing at all when the dashboard asks
+/// for no sign-in.
+public protocol SessionCredentials: Sendable {
+    func socketTicket() async throws -> String?
+}
+
+/// The tokens of one dashboard, kept in memory and in the Keychain, refreshed a minute before they
+/// run out, and dropped when the server says the session is over.
+public actor DashboardSession: SessionCredentials {
+    public let endpoint: Endpoint
+    private let client: DashboardClient
+    private let storage: (any TokenStorage)?
+    private let skew: TimeInterval
+    private let now: @Sendable () -> Date
+    private var tokens: Tokens?
+
+    public init(
+        endpoint: Endpoint,
+        transport: any HTTPTransport = URLSessionTransport(),
+        storage: (any TokenStorage)? = nil,
+        skew: TimeInterval = 60,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.endpoint = endpoint
+        client = DashboardClient(endpoint: endpoint, transport: transport)
+        self.storage = storage
+        self.skew = skew
+        self.now = now
+    }
+
+    public var currentTokens: Tokens? { tokens }
+
+    /// Reads what the Keychain kept for this server, at launch.
+    @discardableResult
+    public func load() throws -> Tokens? {
+        let stored = try storage?.tokens(for: endpoint.base.absoluteString)
+        tokens = stored
+        return stored
+    }
+
+    /// Takes the tokens of a finished sign-in and keeps them.
+    public func adopt(_ tokens: Tokens?) throws {
+        self.tokens = tokens
+        try storage?.save(tokens, for: endpoint.base.absoluteString)
+    }
+
+    /// A token that can be sent now; nil when the dashboard asked for none.
+    public func accessToken() async throws -> String? {
+        guard let current = tokens else { return nil }
+        if current.isValid(at: now(), skew: skew) { return current.accessToken }
+        guard current.canRefresh else {
+            try? adopt(nil)
+            throw SessionError.signInRequired
+        }
+        do {
+            let renewed = try await client.refresh(current)
+            try? adopt(renewed)
+            return renewed.accessToken
+        } catch let error as DashboardError where error.needsSignIn {
+            // Both 400 and 401 mean the refresh token is no good any more.
+            try? adopt(nil)
+            throw SessionError.signInRequired
+        }
+        // Anything else, 503 above all, keeps the tokens: the identity provider may come back.
+    }
+
+    public func socketTicket() async throws -> String? {
+        guard let token = try await accessToken() else { return nil }
+        return try await client.socketTicket(token: token)
+    }
+}

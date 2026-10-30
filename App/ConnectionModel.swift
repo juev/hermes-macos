@@ -21,9 +21,13 @@ final class ConnectionModel {
     }
 
     private(set) var phase: Phase = .idle
+    /// Where the socket of the dashboard is, once the sign-in is done.
+    private(set) var gateway: GatewaySession.State = .idle
     /// True when the address is on the tailnet and this Mac has no tailnet route.
     private(set) var needsTailscale = false
     private var task: Task<Void, Never>?
+    private var gatewaySession: GatewaySession?
+    private var dashboardSession: DashboardSession?
 
     var endpoint: Endpoint? { Endpoint(address: address) }
 
@@ -35,6 +39,31 @@ final class ConnectionModel {
         guard let endpoint, canConnect else { return }
         task?.cancel()
         task = Task { await connect(to: endpoint) }
+    }
+
+    private func openSocket(endpoint: Endpoint, tokens: Tokens?) async throws {
+        let dashboard = DashboardSession(endpoint: endpoint, storage: KeychainTokenStorage())
+        try await dashboard.adopt(tokens)
+        dashboardSession = dashboard
+
+        let session = GatewaySession(
+            endpoint: endpoint,
+            credentials: dashboard,
+            onState: { [weak self] state in
+                Task { @MainActor in self?.gateway = state }
+            }
+        )
+        gatewaySession = session
+        await session.start()
+    }
+
+    private func stopSocket() {
+        let session = gatewaySession
+        gatewaySession = nil
+        dashboardSession = nil
+        if let session {
+            Task { await session.stop() }
+        }
     }
 
     /// Opens the Tailscale app so the person can turn the tailnet on.
@@ -52,6 +81,8 @@ final class ConnectionModel {
     private func connect(to endpoint: Endpoint) async {
         phase = .checking
         needsTailscale = false
+        gateway = .idle
+        stopSocket()
 
         // A dashboard published only on the tailnet has no route while Tailscale is off, and a
         // request would hang for its whole timeout. Say that at once instead.
@@ -73,12 +104,17 @@ final class ConnectionModel {
         let client = DashboardClient(endpoint: endpoint)
         do {
             let status = try await client.status()
+            let tokens: Tokens?
             if status.authRequired {
                 phase = .waitingForBrowser
-                let tokens = try await signIn(to: client, providers: status.authProviders)
-                try KeychainTokenStorage().save(tokens, for: endpoint.base.absoluteString)
+                let signed = try await signIn(to: client, providers: status.authProviders)
+                try KeychainTokenStorage().save(signed, for: endpoint.base.absoluteString)
                 NSApp.activate(ignoringOtherApps: true)
+                tokens = signed
+            } else {
+                tokens = nil
             }
+            try await openSocket(endpoint: endpoint, tokens: tokens)
             phase = .connected(status)
         } catch is CancellationError {
             phase = .idle

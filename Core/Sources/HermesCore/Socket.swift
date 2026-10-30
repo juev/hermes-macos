@@ -52,6 +52,13 @@ final class URLSessionSocketConnection: SocketConnection, @unchecked Sendable {
             }
         } catch let error as URLError where error.code == .cancelled {
             return nil
+        } catch {
+            // A refused handshake is an HTTP answer, not a broken socket: the dashboard denies the
+            // upgrade with 403 and an empty body, which deserves a sentence of its own.
+            if let response = task.response as? HTTPURLResponse, !(200..<300).contains(response.statusCode) {
+                throw GatewayError.refused(status: response.statusCode)
+            }
+            throw error
         }
     }
 

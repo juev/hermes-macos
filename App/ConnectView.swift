@@ -91,13 +91,18 @@ struct ConnectView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         case .connected(let status):
-            Label {
-                Text(verbatim: "Connected to \(model.endpoint?.base.host ?? "the dashboard")" + (status.version.map { " · v\($0)" } ?? ""))
-            } icon: {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 4) {
+                Label {
+                    Text(verbatim: "Connected to \(model.endpoint?.base.host ?? "the dashboard")" + (status.version.map { " · v\($0)" } ?? ""))
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                }
+                .font(.caption)
+                Text(gatewayText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
-            .font(.caption)
         case .failed(let message):
             VStack(alignment: .leading, spacing: 6) {
                 Text(message)
@@ -110,6 +115,16 @@ struct ConnectView: View {
                         .font(.caption)
                 }
             }
+        }
+    }
+
+    private var gatewayText: String {
+        switch model.gateway {
+        case .idle, .connecting: return "Opening the socket…"
+        case .ready: return "The socket is ready."
+        case .waiting: return "The socket dropped. Trying again…"
+        case .failed(let reason): return reason
+        case .stopped: return "The socket is closed."
         }
     }
 
