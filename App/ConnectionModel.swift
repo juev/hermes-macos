@@ -41,9 +41,20 @@ final class ConnectionModel {
         task = Task { await connect(to: endpoint) }
     }
 
-    private func openSocket(endpoint: Endpoint, tokens: Tokens?) async throws {
-        let dashboard = DashboardSession(endpoint: endpoint, storage: KeychainTokenStorage())
-        try await dashboard.adopt(tokens)
+    /// True when the stored tokens are gone or refused; false when they still open the dashboard.
+    private func needsBrowserSignIn(_ session: DashboardSession) async throws -> Bool {
+        guard let stored = try await session.load(), !stored.accessToken.isEmpty else { return true }
+        do {
+            _ = try await session.sessions(limit: 1)
+            return false
+        } catch let error as DashboardError where error.needsSignIn {
+            return true
+        } catch let error as SessionError where error == .signInRequired {
+            return true
+        }
+    }
+
+    private func openSocket(endpoint: Endpoint, session dashboard: DashboardSession) async throws {
         dashboardSession = dashboard
 
         let session = GatewaySession(
@@ -104,17 +115,19 @@ final class ConnectionModel {
         let client = DashboardClient(endpoint: endpoint)
         do {
             let status = try await client.status()
-            let tokens: Tokens?
+            // The Keychain may already hold tokens of this dashboard: use them instead of sending
+            // the person through the browser again on every launch.
+            let session = DashboardSession(endpoint: endpoint, storage: KeychainTokenStorage())
+            try? await session.load()
             if status.authRequired {
-                phase = .waitingForBrowser
-                let signed = try await signIn(to: client, providers: status.authProviders)
-                try KeychainTokenStorage().save(signed, for: endpoint.base.absoluteString)
-                NSApp.activate(ignoringOtherApps: true)
-                tokens = signed
-            } else {
-                tokens = nil
+                if try await needsBrowserSignIn(session) {
+                    phase = .waitingForBrowser
+                    let signed = try await signIn(to: client, providers: status.authProviders)
+                    try await session.adopt(signed)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             }
-            try await openSocket(endpoint: endpoint, tokens: tokens)
+            try await openSocket(endpoint: endpoint, session: session)
             phase = .connected(status)
         } catch is CancellationError {
             phase = .idle
