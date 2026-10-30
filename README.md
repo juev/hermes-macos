@@ -36,6 +36,9 @@ scripts/build.sh        # generate the project and build build/Build/Products/De
 scripts/test.sh         # swift test on Core: no window, no Xcode project
 ```
 
+`scripts/smoke.sh` runs the client's own code against a live dashboard, with the tokens the app keeps
+in the Keychain, and prints what came back. Run it after a change that touches the wire.
+
 `scripts/test.sh` first copies the payloads of the contract out of `../hermes/docs/fixtures` into the
 test bundle (`scripts/sync-fixtures.sh`); the copy is generated and stays out of git, so the contract
 keeps one home. Set `HERMES_CONTRACT_FIXTURES` when the two repositories are not siblings.
