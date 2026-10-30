@@ -36,6 +36,10 @@ scripts/build.sh        # generate the project and build build/Build/Products/De
 scripts/test.sh         # swift test on Core: no window, no Xcode project
 ```
 
+`scripts/test.sh` first copies the payloads of the contract out of `../hermes/docs/fixtures` into the
+test bundle (`scripts/sync-fixtures.sh`); the copy is generated and stays out of git, so the contract
+keeps one home. Set `HERMES_CONTRACT_FIXTURES` when the two repositories are not siblings.
+
 A check must not take the screen: start the built app with
 `open -g -j build/Build/Products/Debug/Hermes.app` and take the result from the log, the data folder or
 a test.

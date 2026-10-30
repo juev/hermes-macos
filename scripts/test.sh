@@ -4,4 +4,7 @@ set -eu
 
 cd "$(dirname "$0")/.."
 
+# The payloads the tests replay live in the contract, not here: copy them first.
+scripts/sync-fixtures.sh
+
 swift test --package-path Core "$@"

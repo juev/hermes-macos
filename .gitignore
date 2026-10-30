@@ -12,3 +12,7 @@ xcuserdata/
 Hermes.xcodeproj/
 .build/
 *.xcresult
+
+# The payloads of the contract are copied here by scripts/sync-fixtures.sh, never committed.
+Core/Tests/HermesCoreTests/Fixtures/**
+!Core/Tests/HermesCoreTests/Fixtures/.gitkeep

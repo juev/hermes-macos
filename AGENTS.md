@@ -10,6 +10,9 @@ Rules for anyone changing this repository, human or agent. Build and test comman
 - `scripts/test.sh` runs `swift test` on `Core`, the package with the protocol and the model. It is
   headless and takes seconds; a change to the wire behaviour or to how a transcript is parsed goes with
   a test there, not only with a build.
+- The payloads those tests replay live in the contract, `../hermes/docs/fixtures`, and are copied into
+  the test bundle by `scripts/sync-fixtures.sh`, which `scripts/test.sh` runs first. They are never
+  committed here: two copies of a payload is how the clients drift apart from what the server answered.
 - The app target is thin on purpose: windows, menus, typography. Anything decidable from a frame or a
   string belongs in `Core`, where it can be tested without a screen.
 

@@ -12,7 +12,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "HermesCore"),
-        .testTarget(name: "HermesCoreTests", dependencies: ["HermesCore"])
+        .testTarget(name: "HermesCoreTests", dependencies: ["HermesCore"], resources: [.copy("Fixtures")])
     ],
     swiftLanguageModes: [.v6]
 )
