@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import HermesCore
 import Observation
+import UniformTypeIdentifiers
 
 /// The chats of one dashboard and the history of the one that is open.
 @MainActor
@@ -43,6 +44,8 @@ final class ChatModel {
 
     /// What the person is writing.
     var draft = ""
+    /// Files picked for the message under it.
+    private(set) var drafts: [AttachmentDraft] = []
     /// True while a turn runs in the open chat.
     private(set) var running = false
     /// What the dashboard says about the turn: "thinking", a queued model, an error.
@@ -101,16 +104,53 @@ final class ChatModel {
         }
     }
 
-    /// Sends what the person wrote into the open chat.
+    /// Reads a file the person picked into the message under the field.
+    func addFile(_ url: URL) {
+        do {
+            let data = try Data(contentsOf: url)
+            guard data.count <= AttachmentDraft.largestByteCount else {
+                sendError = "That file is larger than 25 MB, which this client will not send."
+                return
+            }
+            let type = UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
+            drafts.append(AttachmentDraft(name: url.lastPathComponent, mime: type, data: data))
+            sendError = nil
+        } catch {
+            sendError = "The file could not be read: \(error.localizedDescription)"
+        }
+    }
+
+    func removeDraft(_ draft: AttachmentDraft) {
+        drafts.removeAll { $0.id == draft.id }
+    }
+
+    /// Sends what the person wrote into the open chat, with the files picked for it.
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, !running, let chat else { return }
+        let files = drafts
+        guard !text.isEmpty || !files.isEmpty, !running, let chat else { return }
         draft = ""
+        drafts = []
         sendError = nil
-        items.append(.user(UserBubble(key: "local-\(UUID().uuidString)", text: text)))
+
+        let shown = text.isEmpty
+            ? (files.allSatisfy(\.isImage) ? "Describe the picture." : "Look at these files.")
+            : text
+        items.append(.user(UserBubble(
+            key: "local-\(UUID().uuidString)",
+            text: shown,
+            attachments: files.map { Attachment(path: $0.name, name: $0.name, isImage: $0.isImage) }
+        )))
         running = true
         do {
-            try await chat.submit(text)
+            // A file answers with the text that names it, which the prompt has to carry; a picture
+            // joins the vision queue of the turn on its own.
+            var refs: [String] = []
+            for file in files {
+                if let ref = try await chat.attach(file) { refs.append(ref) }
+            }
+            let prompt = refs.isEmpty ? shown : shown + "\n" + refs.joined(separator: "\n")
+            try await chat.submit(prompt)
         } catch {
             running = false
             sendError = ErrorMessage.of(error)

@@ -157,3 +157,91 @@ extension JSONValue {
         return String(decoding: data, as: UTF8.self)
     }
 }
+
+@Suite("Files sent with a message")
+struct AttachmentTests {
+    private let endpoint = Endpoint(address: "https://hermes.example.test")!
+
+    private func opened(_ socket: FakeSocket) async -> (GatewaySession, ChatSession) {
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([.socket(socket)]),
+            firstPause: .milliseconds(20),
+            maxPause: .milliseconds(80)
+        )
+        await gateway.start()
+        try? await waitUntil { await gateway.currentState() == .ready }
+        let chat = ChatSession(gateway: gateway)
+
+        async let joined = chat.join(storedID: "stored-1")
+        try? await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "session.resume" } }
+        if let request = socket.sentFrames.last(where: { $0["method"]?.stringValue == "session.resume" }) {
+            let frame: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": ["session_id": "live-1"]]
+            socket.push(frame.encodedString)
+        }
+        _ = try? await joined
+        return (gateway, chat)
+    }
+
+    @Test("A picture goes to the vision queue of the turn")
+    func image() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let (gateway, chat) = await opened(socket)
+
+        let draft = AttachmentDraft(name: "shot.png", mime: "image/png", data: Data([0x89, 0x50, 0x4E, 0x47]))
+        async let attaching = chat.attach(draft)
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "image.attach_bytes" } }
+        let frame = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "image.attach_bytes" })
+        #expect(frame["params"]?["session_id"]?.stringValue == "live-1")
+        #expect(frame["params"]?["filename"]?.stringValue == "shot.png")
+        #expect(frame["params"]?["content_base64"]?.stringValue == draft.data.base64EncodedString())
+
+        let answer: JSONValue = ["jsonrpc": "2.0", "id": frame["id"] ?? "x", "result": [:]]
+        socket.push(answer.encodedString)
+        #expect(try await attaching == nil)
+        await gateway.stop()
+    }
+
+    @Test("Any other file answers with the text that names it")
+    func file() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let (gateway, chat) = await opened(socket)
+
+        let draft = AttachmentDraft(name: "notes.md", mime: "text/markdown", data: Data("# hi".utf8))
+        async let attaching = chat.attach(draft)
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "file.attach" } }
+        let frame = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "file.attach" })
+        #expect(frame["params"]?["name"]?.stringValue == "notes.md")
+        #expect(frame["params"]?["data_url"]?.stringValue == "data:text/markdown;base64," + draft.data.base64EncodedString())
+
+        let answer: JSONValue = ["jsonrpc": "2.0", "id": frame["id"] ?? "x", "result": ["ref_text": "@file:/opt/data/uploads/notes.md"]]
+        socket.push(answer.encodedString)
+        #expect(try await attaching == "@file:/opt/data/uploads/notes.md")
+        await gateway.stop()
+    }
+
+    @Test("An attachment without a joined chat is refused")
+    func notJoined() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([.socket(socket)]),
+            firstPause: .milliseconds(20)
+        )
+        await gateway.start()
+        try? await waitUntil { await gateway.currentState() == .ready }
+        let chat = ChatSession(gateway: gateway)
+        do {
+            _ = try await chat.attach(AttachmentDraft(name: "a", mime: "text/plain", data: Data("a".utf8)))
+            Issue.record("An attachment without a join did not throw")
+        } catch let error as ChatError {
+            #expect(error == .notConnected)
+        }
+        await gateway.stop()
+    }
+}

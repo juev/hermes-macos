@@ -117,11 +117,25 @@ struct ChatScreen: View {
                     ComposerView(
                         text: Binding(get: { model.draft }, set: { model.draft = $0 }),
                         isRunning: model.running,
+                        drafts: model.drafts,
+                        onAttach: pickFile,
+                        onRemove: { model.removeDraft($0) },
                         onSend: { Task { await model.send() } },
                         onStop: { Task { await model.stop() } }
                     )
                 }
             }
+        }
+    }
+
+    /// The system picker: the person chooses the file, the app reads it.
+    private func pickFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = "Attach a file or a picture to the message"
+        if panel.runModal() == .OK, let url = panel.url {
+            model.addFile(url)
         }
     }
 

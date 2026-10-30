@@ -1,5 +1,24 @@
 import Foundation
 
+/// A file the person picked to send with the next message, before it is attached.
+public struct AttachmentDraft: Sendable, Equatable, Identifiable {
+    public let name: String
+    public let mime: String
+    public let data: Data
+    /// Beyond this a message is a transfer, not a chat; the dashboard's own limit is unknown.
+    public static let largestByteCount = 25 * 1_024 * 1_024
+
+    public var id: String { name + "\(data.count)" }
+    public var isImage: Bool { mime.hasPrefix("image/") }
+    public var byteCount: Int { data.count }
+
+    public init(name: String, mime: String, data: Data) {
+        self.name = name
+        self.mime = mime
+        self.data = data
+    }
+}
+
 public enum ChatError: Error, Equatable {
     /// The dashboard answered a join without a live session.
     case noLiveSession
@@ -63,6 +82,28 @@ public actor ChatSession {
             model: info?["model"]?.stringValue ?? answer["model"]?.stringValue,
             streamed: answer["inflight"]?["assistant"]?.stringValue ?? ""
         )
+    }
+
+    /// Attaches a file to the next turn. A picture goes to the vision queue of that turn and needs no
+    /// reference in the prompt; any other file answers with the text that names it, which the prompt
+    /// has to carry.
+    public func attach(_ draft: AttachmentDraft) async throws -> String? {
+        guard let liveID else { throw ChatError.notConnected }
+        let encoded = draft.data.base64EncodedString()
+        if draft.isImage {
+            _ = try await gateway.call("image.attach_bytes", params: [
+                "session_id": .string(liveID),
+                "content_base64": .string(encoded),
+                "filename": .string(draft.name)
+            ], timeout: .seconds(120))
+            return nil
+        }
+        let answer = try await gateway.call("file.attach", params: [
+            "session_id": .string(liveID),
+            "data_url": .string("data:\(draft.mime);base64,\(encoded)"),
+            "name": .string(draft.name)
+        ], timeout: .seconds(120))
+        return answer["ref_text"]?.stringValue
     }
 
     /// Sends a prompt into the live session.

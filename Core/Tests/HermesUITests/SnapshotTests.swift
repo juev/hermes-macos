@@ -179,7 +179,7 @@ struct SnapshotTests {
     @Test("The composer")
     func composer() throws {
         let composer = VStack(spacing: 0) {
-            ComposerChrome(text: "Посмотри, почему падает сборка после обновления Xcode")
+            ComposerChrome(text: "Посмотри, почему падает сборка после обновления Xcode", drafts: ["build.log", "screenshot.png"])
             ComposerChrome(text: "", isRunning: true)
         }
         .frame(width: 820, alignment: .leading)
