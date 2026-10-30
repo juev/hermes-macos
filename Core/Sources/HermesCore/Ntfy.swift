@@ -69,8 +69,14 @@ public struct NtfyMessage: Sendable, Equatable {
     public let id: String
     public let event: String
     public let topic: String
-    /// The body as bytes: a push is binary, and ntfy says so with `encoding: base64`.
+    /// The text of the message as ntfy wrote it.
+    public let text: String
+    /// The body as bytes when ntfy said how it encoded them.
     public let body: Data
+    /// The text read as base64. A push is binary, and this server hands a binary body back as base64
+    /// in `message` with **no** `encoding` field to say so — so the bytes cannot be taken on trust and
+    /// this is the other reading to try.
+    public let base64Body: Data?
 
     /// Reads one line of the JSON stream; nil for a line that is not a message.
     public init?(line: String) {
@@ -81,11 +87,18 @@ public struct NtfyMessage: Sendable, Equatable {
         self.event = event
         topic = json["topic"]?.stringValue ?? ""
         let text = json["message"]?.stringValue ?? ""
+        self.text = text
+        base64Body = Data(base64Encoded: text.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/"))
         if json["encoding"]?.stringValue == "base64" {
             body = Data(base64Encoded: text) ?? Data()
         } else {
             body = Data(text.utf8)
         }
+    }
+
+    /// The body in one of the two readings it can have, whichever opens.
+    public var candidateBodies: [Data] {
+        [body, base64Body].compactMap { $0 }.filter { !$0.isEmpty }
     }
 }
 
@@ -103,13 +116,21 @@ public struct URLSessionLineStream: PushStreamProvider {
         for (name, value) in headers {
             request.setValue(value, forHTTPHeaderField: name)
         }
+        // The stream is the point: a body that URLSession compresses is held back until a block of it
+        // is complete, and a push would arrive in a burst whenever the block filled.
+        request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
         let session = URLSession(configuration: .ephemeral)
         let (bytes, response) = try await session.bytes(for: request)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
             throw DashboardError(status: http.statusCode, detail: HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
         }
         return AsyncThrowingStream { continuation in
+            // The session has to outlive this function: a session that is released cancels its task,
+            // and the stream would end before a push ever came. Capturing it in the task keeps it for
+            // as long as the stream is read.
+            let session = session
             let task = Task {
+                _ = session
                 do {
                     for try await line in bytes.lines {
                         continuation.yield(line)
@@ -163,8 +184,11 @@ public actor PushListener {
     public func start() {
         guard task == nil else { return }
         setState(.listening)
-        task = Task { [weak self] in
-            await self?.listen()
+        // A strong reference on purpose: the listener is a long-lived one, and a task that let it go
+        // the moment `start` returned listened to nothing at all. `stop` cancels the task, which ends
+        // the loop and the reference with it.
+        task = Task {
+            await listen()
         }
     }
 
@@ -180,10 +204,13 @@ public actor PushListener {
                 let lines = try await stream.lines(from: topic.streamURL, headers: credentials?.headers ?? [:])
                 for try await line in lines {
                     guard !Task.isCancelled else { return }
-                    guard let message = NtfyMessage(line: line), message.event == "message", !message.body.isEmpty else { continue }
-                    if let plain = try? WebPush.decrypt(message.body, keys: keys),
-                       let json = try? JSONValue.decode(plain) {
+                    guard let message = NtfyMessage(line: line), message.event == "message" else { continue }
+                    // One of the readings opens; the other is why this is a loop and not an `if let`.
+                    for body in message.candidateBodies {
+                        guard let plain = try? WebPush.decrypt(body, keys: keys),
+                              let json = try? JSONValue.decode(plain) else { continue }
                         onPush(PushMessage(json))
+                        break
                     }
                 }
             } catch {

@@ -126,3 +126,28 @@ struct PushListenerTests {
         await listener.stop()
     }
 }
+
+@Suite("A binary body this server does not mark")
+struct NtfyUnmarkedBinaryTests {
+    @Test("The body is tried as it came and as base64, and the one that opens wins")
+    func unmarked() async throws {
+        // What ntfy really sends for a binary push: base64 in `message`, no `encoding` field.
+        let body = PushVector.data(PushVector.body)
+        let line = #"{"id":"m1","event":"message","topic":"upabc","message":"\#(body.base64EncodedString())"}"#
+        let parsing = try #require(NtfyMessage(line: line))
+        #expect(parsing.candidateBodies.contains(body))
+
+        let collected = Recorder<PushMessage>()
+        let listener = PushListener(
+            topic: NtfyTopic(base: URL(string: "https://ntfy.example.test")!, topic: "upabc"),
+            credentials: nil,
+            keys: PushVector.keys(),
+            stream: FakeStream([line]),
+            onPush: { collected.record($0) }
+        )
+        await listener.start()
+        try await waitUntil { collected.all.count == 1 }
+        #expect(collected.all.first?.preview == "The build is green again.")
+        await listener.stop()
+    }
+}
