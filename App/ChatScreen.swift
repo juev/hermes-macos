@@ -11,10 +11,17 @@ struct ChatScreen: View {
     @State private var newTitle = ""
     @State private var deleting: SessionSummary?
 
+    let gatewayState: GatewaySession.State
     let onDisconnect: () -> Void
 
-    init(session: DashboardSession, gateway: GatewaySession, onDisconnect: @escaping () -> Void = {}) {
+    init(
+        session: DashboardSession,
+        gateway: GatewaySession,
+        gatewayState: GatewaySession.State = .ready,
+        onDisconnect: @escaping () -> Void = {}
+    ) {
         _model = State(initialValue: ChatModel(session: session, gateway: gateway))
+        self.gatewayState = gatewayState
         self.onDisconnect = onDisconnect
     }
 
@@ -30,7 +37,12 @@ struct ChatScreen: View {
             }
             .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 380)
         } detail: {
-            detail
+            VStack(spacing: 0) {
+                if gatewayState != .ready {
+                    ConnectionBanner(state: gatewayState)
+                }
+                detail
+            }
         }
         .task { await model.load() }
         .onChange(of: selection) { _, id in
@@ -65,6 +77,15 @@ struct ChatScreen: View {
             Text("The chat and its messages are removed from the dashboard. This cannot be undone.")
         }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await model.reload() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise")
+                }
+                .keyboardShortcut("r", modifiers: .command)
+                .help("Read the chats and the open one again (⌘R)")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     Task { await model.newChat() }

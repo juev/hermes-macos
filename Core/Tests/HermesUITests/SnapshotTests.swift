@@ -220,6 +220,22 @@ struct SnapshotTests {
         #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("question.png").path))
     }
 
+    @Test("The line that says the connection is not there")
+    func connection() throws {
+        let bars = VStack(alignment: .leading, spacing: 0) {
+            ConnectionBanner(state: .waiting)
+            ConnectionBanner(state: .failed("The sign-in is over. Sign in again to keep the connection."))
+        }
+        .frame(width: 820, alignment: .leading)
+        .background(Color(nsColor: .textBackgroundColor))
+        .environment(\.colorScheme, .light)
+
+        let renderer = ImageRenderer(content: bars)
+        renderer.scale = 2
+        try write(renderer.nsImage, to: "connection.png")
+        #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("connection.png").path))
+    }
+
     @Test("The composer")
     func composer() throws {
         let composer = VStack(spacing: 0) {

@@ -13,7 +13,12 @@ struct RootView: View {
     @ViewBuilder
     private var content: some View {
         if case .connected = connection.phase, let session = connection.dashboardSession, let gateway = connection.gatewaySession {
-            ChatScreen(session: session, gateway: gateway, onDisconnect: { connection.disconnect() })
+            ChatScreen(
+                session: session,
+                gateway: gateway,
+                gatewayState: connection.gateway,
+                onDisconnect: { connection.disconnect() }
+            )
                 .id(session.endpoint)
         } else {
             ConnectView(model: connection)

@@ -241,6 +241,10 @@ struct MessageView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(Theme.Palette.messageBackground, in: RoundedRectangle(cornerRadius: Theme.Metrics.bubbleRadius, style: .continuous))
+            .contextMenu {
+                Button("Copy") { Clipboard.copy(bubble.text) }
+                if let quote = bubble.quote { Button("Copy what it answers") { Clipboard.copy(quote) } }
+            }
         }
     }
 }
@@ -287,6 +291,10 @@ struct AnswerView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            Button("Copy the answer") { Clipboard.copy(turn.text) }
+            if let reasoning = turn.reasoning { Button("Copy the reasoning") { Clipboard.copy(reasoning) } }
+        }
     }
 }
 
