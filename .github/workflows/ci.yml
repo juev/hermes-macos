@@ -1,0 +1,37 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: tests and a build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The payloads the tests replay live in the contract repository and are never copied into this
+      # one; without them those tests skip themselves.
+      - uses: actions/checkout@v4
+        with:
+          repository: juev/hermes
+          path: hermes-contract
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Tests
+        env:
+          HERMES_CONTRACT_FIXTURES: ${{ github.workspace }}/hermes-contract/docs/fixtures
+        run: scripts/test.sh
+
+      - name: The app
+        run: scripts/build.sh

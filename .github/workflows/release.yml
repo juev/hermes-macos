@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: a disk image for the tag
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build
+        run: scripts/build.sh
+
+      # Signing and notarization need a Developer ID in the repository's secrets. Until they are there
+      # the image is ad-hoc signed, and the release notes say how to open it.
+      - name: Sign, when there is an identity
+        env:
+          CERTIFICATE: ${{ secrets.HERMES_MACOS_CERTIFICATE_P12 }}
+          PASSWORD: ${{ secrets.HERMES_MACOS_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ secrets.HERMES_MACOS_IDENTITY }}
+        if: env.CERTIFICATE != ''
+        run: |
+          echo "$CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p actions build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p actions build.keychain
+          security import certificate.p12 -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k actions build.keychain
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" \
+            build/Build/Products/Debug/Hermes.app
+
+      - name: Disk image
+        id: dmg
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [ "$version" = "$GITHUB_REF_NAME" ]; then version="0.0.0"; fi
+          name="Hermes-$version.dmg"
+          hdiutil create -volname Hermes -srcfolder build/Build/Products/Debug/Hermes.app \
+            -ov -format UDZO "build/$name"
+          shasum -a 256 "build/$name" | tee "build/$name.sha256"
+          echo "path=build/$name" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.dmg.outputs.path }}
+            ${{ steps.dmg.outputs.path }}.sha256
+          name: Hermes ${{ steps.dmg.outputs.version }}
+          body: |
+            Hermes ${{ steps.dmg.outputs.version }} for macOS 15 and later.
+
+            **The image is not notarized.** It is signed ad-hoc, so the first launch asks for
+            permission in System Settings → Privacy & Security → *Open Anyway*, or the quarantine
+            flag can be dropped first:
+
+            ```sh
+            xattr -dr com.apple.quarantine /Applications/Hermes.app
+            ```
+
+            Checksums are in the `.sha256` file next to the image.
+          fail_on_unmatched_files: true
+          generate_release_notes: true
