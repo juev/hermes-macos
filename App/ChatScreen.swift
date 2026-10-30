@@ -67,6 +67,15 @@ struct ChatScreen: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
+                    Task { await model.newChat() }
+                } label: {
+                    Label("New chat", systemImage: "square.and.pencil")
+                }
+                .keyboardShortcut("n", modifiers: .command)
+                .help("Start a chat (⌘N)")
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
                     showingPush = true
                 } label: {
                     Label("Push", systemImage: "bell")
@@ -168,10 +177,14 @@ struct ChatScreen: View {
         case .failed(let message):
             ContentUnavailableView("The chat could not be read", systemImage: "exclamationmark.triangle", description: Text(message))
         case .ready:
-            if model.items.isEmpty {
+            if model.items.isEmpty && !model.isDraft {
                 ContentUnavailableView("Nothing here yet", systemImage: "bubble.left", description: Text("This chat has no stored messages."))
             } else {
                 VStack(spacing: 0) {
+                    if model.isDraft && model.items.isEmpty {
+                        ContentUnavailableView("A new chat", systemImage: "square.and.pencil", description: Text("Write the first message; the dashboard names the chat from it."))
+                            .frame(maxHeight: .infinity)
+                    }
                     if let question = model.question {
                         QuestionCard(
                             question: question,

@@ -63,6 +63,11 @@ final class ChatModel {
     private(set) var sendError: String?
     /// The question the agent waits on, if any.
     private(set) var question: AgentQuestion?
+    /// A chat that exists only in the gateway so far: created, not yet named by its first message.
+    private(set) var isDraft = false
+
+    /// True when a message can be written: a stored chat is open, or a new one is being started.
+    var hasOpenChat: Bool { selection != nil || isDraft }
 
     func load() async {
         await push.restoreIfEnabled()
@@ -107,17 +112,7 @@ final class ChatModel {
         self.chat = chat
         do {
             let joined = try await chat.join(storedID: id)
-            await chat.setEventSink { [weak self] event in
-                Task { @MainActor in self?.apply(event) }
-            }
-            await chat.setQuestionSink { [weak self] question in
-                Task { @MainActor in
-                    self?.question = question
-                    if case .approval(let approval) = question {
-                        TurnNotifier.shared.questionAsked(chat: self?.selected?.label ?? "Hermes", approval: approval)
-                    }
-                }
-            }
+            await wire(chat)
             running = joined.running
             if joined.running {
                 items = LiveTurn.resume(items, streamed: joined.streamed)
@@ -146,6 +141,57 @@ final class ChatModel {
 
     func removeDraft(_ draft: AttachmentDraft) {
         drafts.removeAll { $0.id == draft.id }
+    }
+
+    /// Starts a chat that has no name yet: the dashboard names it from the first message.
+    func newChat() async {
+        await chat?.leave()
+        chat = nil
+        selection = nil
+        selected = nil
+        items = []
+        running = false
+        question = nil
+        status = nil
+        sendError = nil
+        transcriptState = .ready
+        isDraft = false
+
+        let chat = ChatSession(gateway: gateway)
+        self.chat = chat
+        await wire(chat)
+        do {
+            // The chat is a draft only once the gateway has made it: until then there is nothing to
+            // write into, and a composer that took words would lose them.
+            try await chat.create()
+            isDraft = true
+        } catch {
+            sendError = ErrorMessage.of(error)
+        }
+    }
+
+    /// The first turn of a new chat is over: the dashboard has stored it, so it can be opened by the
+    /// id the sidebar knows and named like any other.
+    private func adoptDraft() async {
+        isDraft = false
+        await load()
+        if let newest = sessions.first {
+            await open(newest.id)
+        }
+    }
+
+    private func wire(_ chat: ChatSession) async {
+        await chat.setEventSink { [weak self] event in
+            Task { @MainActor in self?.apply(event) }
+        }
+        await chat.setQuestionSink { [weak self] question in
+            Task { @MainActor in
+                self?.question = question
+                if case .approval(let approval) = question {
+                    TurnNotifier.shared.questionAsked(chat: self?.selected?.label ?? "Hermes", approval: approval)
+                }
+            }
+        }
     }
 
     /// Sends what the person wrote into the open chat, with the files picked for it.
@@ -241,6 +287,10 @@ final class ChatModel {
             break
         }
         items = LiveTurn.apply(event, to: items)
+
+        if event.type == "message.complete", wasRunning, isDraft {
+            Task { await self.adoptDraft() }
+        }
 
         // A turn that ends while the window is behind another one is what a banner is for.
         if event.type == "message.complete", wasRunning {

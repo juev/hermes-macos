@@ -132,6 +132,31 @@ public actor ChatSession {
         return answer["ref_text"]?.stringValue
     }
 
+    /// Starts a new chat and keeps it as this session. The dashboard names it from the first message,
+    /// so a client that wants it in the sidebar afterwards asks for the list again.
+    @discardableResult
+    public func create(source: String = "macos") async throws -> String {
+        let answer = try await gateway.call("session.create", params: [
+            "source": .string(source),
+            "close_on_disconnect": false
+        ])
+        guard let live = answer["session_id"]?.scalarString, !live.isEmpty else {
+            throw ChatError.noLiveSession
+        }
+        liveID = live
+        await gateway.setHandlers(
+            onEvent: { [weak self] event in
+                guard let self else { return }
+                Task { await self.receive(event) }
+            },
+            onRequest: { [weak self] request in
+                guard let self else { return }
+                Task { await self.receive(request) }
+            }
+        )
+        return live
+    }
+
     /// Sends a prompt into the live session.
     public func submit(_ text: String) async throws {
         guard let liveID else { throw ChatError.notConnected }

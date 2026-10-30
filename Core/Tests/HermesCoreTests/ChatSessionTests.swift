@@ -333,3 +333,73 @@ struct ChatAdminTests {
         await gateway.stop()
     }
 }
+
+@Suite("A chat that does not exist yet")
+struct NewChatTests {
+    private let endpoint = Endpoint(address: "https://hermes.example.test")!
+
+    @Test("Creating a chat asks for a new session and keeps it")
+    func create() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([.socket(socket)]),
+            firstPause: .milliseconds(20)
+        )
+        await gateway.start()
+        try? await waitUntil { await gateway.currentState() == .ready }
+        let chat = ChatSession(gateway: gateway)
+
+        async let creating = chat.create()
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "session.create" } }
+        let request = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.create" })
+        #expect(request["params"]?["source"]?.stringValue == "macos")
+        #expect(request["params"]?["close_on_disconnect"]?.boolValue == false)
+
+        let answer: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": ["session_id": "live-new"]]
+        socket.push(answer.encodedString)
+        #expect(try await creating == "live-new")
+        let live = await chat.currentLiveID()
+        #expect(live == "live-new")
+
+        // The new session takes prompts at once.
+        async let sending = chat.submit("Привет")
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "prompt.submit" } }
+        let prompt = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "prompt.submit" })
+        #expect(prompt["params"]?["session_id"]?.stringValue == "live-new")
+        let promptAnswer: JSONValue = ["jsonrpc": "2.0", "id": prompt["id"] ?? "x", "result": [:]]
+        socket.push(promptAnswer.encodedString)
+        try await sending
+        await gateway.stop()
+    }
+
+    @Test("A dashboard that creates nothing is an error")
+    func noSession() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([.socket(socket)]),
+            firstPause: .milliseconds(20)
+        )
+        await gateway.start()
+        try? await waitUntil { await gateway.currentState() == .ready }
+        let chat = ChatSession(gateway: gateway)
+
+        async let creating = chat.create()
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "session.create" } }
+        let request = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.create" })
+        let answer: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": [:]]
+        socket.push(answer.encodedString)
+        do {
+            _ = try await creating
+            Issue.record("A dashboard that created nothing was taken as success")
+        } catch let error as ChatError {
+            #expect(error == .noLiveSession)
+        }
+        await gateway.stop()
+    }
+}
