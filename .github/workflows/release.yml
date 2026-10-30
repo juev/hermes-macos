@@ -21,7 +21,11 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # Release, not Debug: from Xcode 16 a debug build keeps its code in a `Hermes.debug.dylib`
+      # beside the stub executable, and that arrangement is not something to ship.
       - name: Build
+        env:
+          CONFIGURATION: Release
         run: scripts/build.sh
 
       # The identity is this project's own: a self-signed certificate kept in the repository's secrets,
@@ -40,10 +44,29 @@ jobs:
           security list-keychains -d user -s build.keychain
           security import certificate.p12 -k build.keychain -P "$PASSWORD" -T /usr/bin/codesign -A
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions build.keychain
-          codesign --force --deep --options runtime --keychain build.keychain \
-            --sign "$IDENTITY" build/Build/Products/Debug/Hermes.app
+          # No `--options runtime`: the hardened runtime turns on library validation, and a
+          # self-signed identity has no Team ID to validate against — the app then fails at launch
+          # with "mapping process and mapped file (non-platform) have different Team IDs".
+          codesign --force --deep --keychain build.keychain \
+            --sign "$IDENTITY" build/Build/Products/Release/Hermes.app
           codesign -dv --verbose=2 build/Build/Products/Debug/Hermes.app 2>&1 | head -8
           echo "SIGNED_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: The app starts
+        run: |
+          app="build/Build/Products/Release/Hermes.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          "$app/Contents/MacOS/Hermes" > /tmp/launch.log 2>&1 &
+          pid=$!
+          sleep 5
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "the app is running"
+            kill "$pid"
+          else
+            echo "the app did not stay up:"
+            cat /tmp/launch.log
+            exit 1
+          fi
 
       - name: Disk image
         id: dmg
@@ -51,7 +74,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           if [ "$version" = "$GITHUB_REF_NAME" ]; then version="0.0.0"; fi
           name="Hermes-$version.dmg"
-          hdiutil create -volname Hermes -srcfolder build/Build/Products/Debug/Hermes.app \
+          hdiutil create -volname Hermes -srcfolder build/Build/Products/Release/Hermes.app \
             -ov -format UDZO "build/$name"
           if [ -n "${SIGNED_IDENTITY:-}" ]; then
             codesign --force --keychain build.keychain --sign "$SIGNED_IDENTITY" "build/$name" || true
