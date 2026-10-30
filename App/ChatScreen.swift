@@ -220,7 +220,8 @@ struct ChatScreen: View {
                     TranscriptView(
                         items: model.items,
                         loadFile: { path in try await model.fileData(path) },
-                        openFile: { path in model.openFile(path) }
+                        openFile: { path in model.openFile(path) },
+                        onAskAgain: { bubble in Task { await model.askAgain(bubble) } }
                     )
                     ComposerView(
                         text: Binding(get: { model.draft }, set: { model.draft = $0 }),

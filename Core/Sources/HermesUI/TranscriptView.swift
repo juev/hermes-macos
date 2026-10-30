@@ -6,15 +6,18 @@ public struct TranscriptView: View {
     public let items: [ChatItem]
     public let loadFile: (@Sendable (String) async throws -> Data)?
     public let openFile: (@Sendable (String) -> Void)?
+    public let onAskAgain: ((UserBubble) -> Void)?
 
     public init(
         items: [ChatItem],
         loadFile: (@Sendable (String) async throws -> Data)? = nil,
-        openFile: (@Sendable (String) -> Void)? = nil
+        openFile: (@Sendable (String) -> Void)? = nil,
+        onAskAgain: ((UserBubble) -> Void)? = nil
     ) {
         self.items = items
         self.loadFile = loadFile
         self.openFile = openFile
+        self.onAskAgain = onAskAgain
     }
 
     @State private var followsTheEnd = true
@@ -22,7 +25,7 @@ public struct TranscriptView: View {
     public var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                TranscriptContent(items: items, loadFile: loadFile, openFile: openFile)
+                TranscriptContent(items: items, loadFile: loadFile, openFile: openFile, onAskAgain: onAskAgain)
                 // A stream of words grows under the fold; this is what the view keeps in sight.
                 Color.clear.frame(height: 1).id(Self.bottomID)
             }
@@ -73,15 +76,18 @@ public struct TranscriptContent: View {
     public let items: [ChatItem]
     public let loadFile: (@Sendable (String) async throws -> Data)?
     public let openFile: (@Sendable (String) -> Void)?
+    public let onAskAgain: ((UserBubble) -> Void)?
 
     public init(
         items: [ChatItem],
         loadFile: (@Sendable (String) async throws -> Data)? = nil,
-        openFile: (@Sendable (String) -> Void)? = nil
+        openFile: (@Sendable (String) -> Void)? = nil,
+        onAskAgain: ((UserBubble) -> Void)? = nil
     ) {
         self.items = items
         self.loadFile = loadFile
         self.openFile = openFile
+        self.onAskAgain = onAskAgain
     }
 
     public var body: some View {
@@ -92,7 +98,7 @@ public struct TranscriptContent: View {
                 }
                 switch entry.item {
                 case .user(let bubble):
-                    MessageView(bubble: bubble)
+                    MessageView(bubble: bubble, onAskAgain: onAskAgain)
                 case .assistant(let turn):
                     AnswerView(turn: turn, loadFile: loadFile, openFile: openFile)
                 case .cronReport(let report):
@@ -205,6 +211,7 @@ struct CronReportView: View {
 /// What the person wrote: a bubble on the right, as far from the answer as the turn spacing.
 struct MessageView: View {
     let bubble: UserBubble
+    var onAskAgain: ((UserBubble) -> Void)?
 
     var body: some View {
         HStack {
@@ -244,6 +251,7 @@ struct MessageView: View {
             .contextMenu {
                 Button("Copy") { Clipboard.copy(bubble.text) }
                 if let quote = bubble.quote { Button("Copy what it answers") { Clipboard.copy(quote) } }
+                if let onAskAgain { Button("Ask again") { onAskAgain(bubble) } }
             }
         }
     }

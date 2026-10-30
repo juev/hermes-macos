@@ -45,6 +45,9 @@ public struct UserBubble: Sendable, Equatable {
     public let quote: String?
     /// The skills or the cron run the dashboard expanded the message into, if it built it.
     public let invocation: Invocation?
+    /// What the agent was actually sent: the words of the bubble plus the directives the dashboard
+    /// wrapped around them. Asking again sends this, not the bubble.
+    public let sent: String
 
     public init(
         key: String,
@@ -53,7 +56,8 @@ public struct UserBubble: Sendable, Equatable {
         rowID: Int? = nil,
         timestamp: Date? = nil,
         quote: String? = nil,
-        invocation: Invocation? = nil
+        invocation: Invocation? = nil,
+        sent: String? = nil
     ) {
         self.key = key
         self.text = text
@@ -62,6 +66,7 @@ public struct UserBubble: Sendable, Equatable {
         self.timestamp = timestamp
         self.quote = quote
         self.invocation = invocation
+        self.sent = sent ?? text
     }
 }
 
@@ -204,7 +209,8 @@ public enum Transcript {
                     rowID: message.rowID,
                     timestamp: message.timestamp,
                     quote: quote,
-                    invocation: invocation
+                    invocation: invocation,
+                    sent: message.text
                 )))
 
             case "assistant":

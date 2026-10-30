@@ -90,8 +90,10 @@ Task.detached {
 
     // 2. The sidebar's list.
     var newest: SessionSummary?
+    var pages: [SessionSummary] = []
     do {
-        let page = try await session.sessions(limit: 5)
+        let page = try await session.sessions(limit: 25)
+        pages = page.sessions
         newest = page.sessions.first
         reporter.report(!page.sessions.isEmpty, "sessions", "\(page.sessions.count) of \(page.total), first “\(newest?.label.prefix(40) ?? "-")”")
     } catch {
@@ -135,17 +137,32 @@ Task.detached {
         }
     }
 
-    // 5. A file the agent delivered, if the chat had one.
+    // 5. A file the agent delivered. The newest chat may have none, so the next ones are read until
+    //    one chat has delivered something: the path is the client's, the download is the client's.
+    if delivered == nil {
+        for chat in pages.prefix(25) {
+            guard let rows = try? await session.messages(sessionID: chat.id, limit: 80) else { continue }
+            let found = Transcript.items(from: rows).compactMap { item -> [String] in
+                if case .assistant(let turn) = item { return turn.deliveredFiles }
+                return []
+            }.first ?? []
+            if let first = found.first {
+                delivered = first
+                print("     a delivered file was found in “\(chat.label.prefix(30))”")
+                break
+            }
+        }
+    }
     if let delivered {
         do {
             let token = try await session.accessToken()
             let data = try await FileDownload(endpoint: endpoint).data(path: delivered, token: token)
-            reporter.report(!data.isEmpty, "download", "\(data.count) bytes of \(delivered.suffix(40))")
+            reporter.report(!data.isEmpty, "download", "\(data.count) bytes of …\(delivered.suffix(40))")
         } catch {
             reporter.report(false, "download", "\(error)")
         }
     } else {
-        print("skip download: the newest chat delivered no file")
+        print("skip download: none of the recent chats delivered a file (the call itself is held by the unit tests)")
     }
 
     // 6. The socket: a ticket, the handshake, and the ready event.

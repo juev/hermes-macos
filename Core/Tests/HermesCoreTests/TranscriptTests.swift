@@ -198,6 +198,9 @@ struct TranscriptTests {
         }
         #expect(bubble.text == "проверь диски")
         #expect(bubble.invocation?.skills == ["homelab"])
+        // The bubble shows the instruction; asking again has to send the whole prompt the agent got.
+        #expect(bubble.sent == skillPrompt.text)
+        #expect(bubble.sent.contains("[IMPORTANT:"))
         #expect(bubble.invocation?.full.hasPrefix("[IMPORTANT:") == true)
 
         guard case .user(let reply) = items[2] else {

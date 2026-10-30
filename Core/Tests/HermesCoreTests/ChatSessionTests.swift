@@ -403,3 +403,40 @@ struct NewChatTests {
         await gateway.stop()
     }
 }
+
+@Suite("Asking for the last turn again")
+struct ChatRetryTests {
+    private let endpoint = Endpoint(address: "https://hermes.example.test")!
+
+    @Test("A retry undoes the last turn with the intent the dashboard reads")
+    func retry() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([.socket(socket)]),
+            firstPause: .milliseconds(20)
+        )
+        await gateway.start()
+        try? await waitUntil { await gateway.currentState() == .ready }
+        let chat = ChatSession(gateway: gateway)
+
+        async let joined = chat.join(storedID: "stored-1")
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "session.resume" } }
+        let resume = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.resume" })
+        let resumeAnswer: JSONValue = ["jsonrpc": "2.0", "id": resume["id"] ?? "x", "result": ["session_id": "live-1"]]
+        socket.push(resumeAnswer.encodedString)
+        _ = try await joined
+
+        async let retrying = chat.retry()
+        try await waitUntil { socket.sentFrames.contains { $0["method"]?.stringValue == "session.undo" } }
+        let undo = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.undo" })
+        #expect(undo["params"]?["session_id"]?.stringValue == "live-1")
+        #expect(undo["params"]?["intent"]?.stringValue == "retry")
+        let undoAnswer: JSONValue = ["jsonrpc": "2.0", "id": undo["id"] ?? "x", "result": [:]]
+        socket.push(undoAnswer.encodedString)
+        try await retrying
+        await gateway.stop()
+    }
+}

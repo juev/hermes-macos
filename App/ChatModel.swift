@@ -262,6 +262,28 @@ final class ChatModel {
         self.question = nil
     }
 
+    /// Asks the dashboard for the last turn again, with the very text the agent was sent.
+    func askAgain(_ bubble: UserBubble) async {
+        guard let chat, !isDraft, !bubble.sent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if running { await stop() }
+        do {
+            try await chat.retry()
+            // The dashboard dropped the turn; the window drops it too and asks again.
+            if let index = items.lastIndex(where: { item in
+                if case .user(let mine) = item { return mine.key == bubble.key }
+                return false
+            }) {
+                items = Array(items.prefix(index + 1))
+            }
+            sendError = nil
+            running = true
+            try await chat.submit(bubble.sent)
+        } catch {
+            running = false
+            sendError = ErrorMessage.of(error)
+        }
+    }
+
     func stop() async {
         guard let chat else { return }
         try? await chat.interrupt()

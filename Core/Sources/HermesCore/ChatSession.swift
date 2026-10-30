@@ -175,6 +175,16 @@ public actor ChatSession {
         ])
     }
 
+    /// Asks for the last turn again: the dashboard drops it, and the prompt that asked for it goes
+    /// in once more (`session.undo` with `intent: retry`).
+    public func retry() async throws {
+        guard let liveID else { throw ChatError.notConnected }
+        _ = try await gateway.call("session.undo", params: [
+            "session_id": .string(liveID),
+            "intent": "retry"
+        ])
+    }
+
     /// Stops the turn under way.
     public func interrupt() async throws {
         guard let liveID else { throw ChatError.notConnected }
