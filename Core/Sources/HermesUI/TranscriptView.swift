@@ -4,17 +4,21 @@ import SwiftUI
 /// The history of one chat, drawn as turns: the person's messages and the agent's answers.
 public struct TranscriptView: View {
     public let items: [ChatItem]
+    /// Which chat this is: a different one starts at its end again.
+    public let chatID: String?
     public let loadFile: (@MainActor (String) async throws -> Data)?
     public let openFile: (@MainActor (String) -> Void)?
     public let onAskAgain: (@MainActor (UserBubble) -> Void)?
 
     public init(
         items: [ChatItem],
+        chatID: String? = nil,
         loadFile: (@MainActor (String) async throws -> Data)? = nil,
         openFile: (@MainActor (String) -> Void)? = nil,
         onAskAgain: (@MainActor (UserBubble) -> Void)? = nil
     ) {
         self.items = items
+        self.chatID = chatID
         self.loadFile = loadFile
         self.openFile = openFile
         self.onAskAgain = onAskAgain
@@ -29,13 +33,16 @@ public struct TranscriptView: View {
                 // A stream of words grows under the fold; this is what the view keeps in sight.
                 Color.clear.frame(height: 1).id(Self.bottomID)
             }
-            .onAppear {
-                // Let the content measure before asking where its end is: scrolling a stack that has
-                // not been laid out yet is what left a chat blank until the person nudged it.
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(40))
-                    scrollToEnd(proxy, animated: false)
-                }
+            // Every chat opens at its end, and stays there while the wire fills it in: the cached
+            // history arrives first and the dashboard's may be longer, so the end is asked for twice.
+            .task(id: chatID) {
+                followsTheEnd = true
+                try? await Task.sleep(for: .milliseconds(30))
+                scrollToEnd(proxy, animated: false)
+                try? await Task.sleep(for: .milliseconds(150))
+                // Unconditional: the measurement of a stack that has just changed can report the top
+                // as the end for a moment, and a chat that opens in the middle is what that costs.
+                scrollToEnd(proxy, animated: false)
             }
             .onChange(of: items) { _, _ in
                 if followsTheEnd { scrollToEnd(proxy, animated: true) }
@@ -81,17 +88,21 @@ public struct TranscriptView: View {
 /// The turns themselves, without the scroll view around them: what a snapshot can draw.
 public struct TranscriptContent: View {
     public let items: [ChatItem]
+    /// Which chat this is: a different one starts at its end again.
+    public let chatID: String?
     public let loadFile: (@MainActor (String) async throws -> Data)?
     public let openFile: (@MainActor (String) -> Void)?
     public let onAskAgain: (@MainActor (UserBubble) -> Void)?
 
     public init(
         items: [ChatItem],
+        chatID: String? = nil,
         loadFile: (@MainActor (String) async throws -> Data)? = nil,
         openFile: (@MainActor (String) -> Void)? = nil,
         onAskAgain: (@MainActor (UserBubble) -> Void)? = nil
     ) {
         self.items = items
+        self.chatID = chatID
         self.loadFile = loadFile
         self.openFile = openFile
         self.onAskAgain = onAskAgain

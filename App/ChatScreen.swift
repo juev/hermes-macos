@@ -301,6 +301,7 @@ struct ChatScreen: View {
                     }
                     TranscriptView(
                         items: model.items,
+                        chatID: model.selection,
                         loadFile: { path in try await model.fileData(path) },
                         openFile: { path in model.openFile(path) },
                         onAskAgain: { bubble in Task { await model.askAgain(bubble) } }
@@ -332,8 +333,10 @@ struct ChatScreen: View {
 
     private func subtitle(for session: SessionSummary) -> String {
         var parts: [String] = []
-        // The model in use now: a switch changes it before the list is read again.
-        if let model = model.currentModel ?? session.model { parts.append(model) }
+        // This chat's own model: switching another chat does not change what this one runs on.
+        if let model = model.model(for: session) ?? (session.id == model.selection ? model.currentModel : nil) {
+            parts.append(model)
+        }
         if !session.source.isEmpty { parts.append(session.source) }
         if session.messageCount > 0 { parts.append("\(session.messageCount) messages") }
         if let usage = session.usage {

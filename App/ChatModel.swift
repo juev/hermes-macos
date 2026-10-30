@@ -51,9 +51,22 @@ final class ChatModel {
     private(set) var modelConfirmation: String?
     private(set) var changingModel = false
 
-    /// The model the open chat answers on, as the dashboard last said.
+    /// The model each chat was switched to in this window. The dashboard's list says which model a
+    /// chat was started with, and it does not change when another chat is switched — a switch here
+    /// changes one chat, so the window remembers it for that chat alone.
+    private var chatModels: [String: String] = [:]
+
+    /// The model the open chat answers on: its own if it was switched here, else the one the list
+    /// says it started with. A new chat has no history to ask, so it takes the dashboard's default.
     var currentModel: String? {
-        models?.model ?? selected?.model
+        if let selection, let known = chatModels[selection] { return known }
+        if isDraft { return models?.model }
+        return selected?.model
+    }
+
+    /// The model a chat answers on, for its row in the header and the list.
+    func model(for session: SessionSummary) -> String? {
+        chatModels[session.id] ?? session.model
     }
 
     /// True while the sidebar shows the archive instead of the chats.
@@ -576,6 +589,7 @@ final class ChatModel {
             case .set:
                 modelConfirmation = nil
                 sendError = nil
+                if let selection { chatModels[selection] = model }
                 models = models.map { old in
                     ModelOptions(model: model, provider: provider, providers: old.providers.map { entry in
                         ModelProvider(slug: entry.slug, name: entry.name, models: entry.models,
