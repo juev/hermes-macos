@@ -21,8 +21,7 @@ xcodebuild \
 app="build/Build/Products/${CONFIGURATION:-Debug}/Hermes.app"
 keychain="$HOME/Library/Keychains/login.keychain-db"
 for identity in "Hermes macOS" "Hermes Dev"; do
-	if security find-certificate -c "$identity" -a "$keychain" >/dev/null 2>&1; then
-		codesign --force --deep --keychain "$keychain" --sign "$identity" "$app"
+	if codesign --force --deep --keychain "$keychain" --sign "$identity" "$app" 2>/dev/null; then
 		echo "signed $app with \"$identity\""
 		break
 	fi

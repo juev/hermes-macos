@@ -34,17 +34,17 @@ else
 		| base64 -d -i - -o "$work/identity.p12"
 fi
 
-# A certificate without its key is not an identity, and importing over one makes a duplicate: the
-# stray certificate goes first.
-if security find-certificate -c "Hermes macOS" -a "$keychain" >/dev/null 2>&1 \
-	&& ! security find-key -c "Hermes macOS" >/dev/null 2>&1; then
-	security delete-certificate -c "Hermes macOS" "$keychain" >/dev/null 2>&1 || true
-fi
-
-if security find-key -c "Hermes macOS" >/dev/null 2>&1; then
-	echo "the identity \"Hermes macOS\" is already in $keychain"
+# Asked of codesign rather than of the keychain: a certificate without its key, a key without its
+# certificate and a pair the policy will not trust all look different to `security`, and only one of
+# them signs.
+probe="$(mktemp -d)"
+echo probe > "$probe/file"
+if codesign --force --keychain "$keychain" --sign "Hermes macOS" "$probe/file" >/dev/null 2>&1; then
+	echo "the identity \"Hermes macOS\" already signs on this Mac"
+	rm -rf "$probe"
 	exit 0
 fi
+rm -rf "$probe"
 
 security import "$work/identity.p12" -k "$keychain" -P "$password" -T /usr/bin/codesign -A >/dev/null
 echo "the identity \"Hermes macOS\" is in $keychain; scripts/build.sh signs with it from now on"
