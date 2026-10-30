@@ -113,6 +113,32 @@ struct SnapshotTests {
         #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("transcript-dark.png").path))
     }
 
+    @Test("The results of a search")
+    func search() throws {
+        let hits = [
+            SearchHit(session: Self.sampleSessions[0], snippet: "...command not found\n---\n#!/bin/sh\n# >>>Hermes<<< wrapper", role: "tool"),
+            SearchHit(session: Self.sampleSessions[1], snippet: "Сборка падает на линковке, Hermes 27.1 не видит SDK", role: "assistant"),
+            SearchHit(session: Self.sampleSessions[2], snippet: "утренний дайджест по hermes: 12 сообщений", role: "user")
+        ]
+        let list = VStack(alignment: .leading, spacing: 0) {
+            SearchFieldChrome(text: "hermes")
+            ForEach(hits) { hit in
+                SearchResultRow(hit: hit, query: "hermes")
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(width: 320, alignment: .leading)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .environment(\.colorScheme, .light)
+
+        let renderer = ImageRenderer(content: list)
+        renderer.scale = 2
+        try write(renderer.nsImage, to: "search.png")
+        #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("search.png").path))
+    }
+
     @Test("A row of the chat list")
     func sessions() throws {
         let list = VStack(alignment: .leading, spacing: 0) {

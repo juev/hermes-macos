@@ -13,21 +13,15 @@ struct ChatScreen: View {
 
     var body: some View {
         NavigationSplitView {
-            SessionListView(sessions: model.sessions, selection: $selection)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 380)
-                .overlay {
-                    if case .loading = model.sessionsState, model.sessions.isEmpty {
-                        ProgressView().controlSize(.small)
-                    }
+            VStack(spacing: 0) {
+                SearchField(text: Binding(get: { model.query }, set: { model.query = $0 }))
+                if model.isSearching {
+                    searchResults
+                } else {
+                    sessions
                 }
-                .overlay(alignment: .bottom) {
-                    if case .failed(let message) = model.sessionsState {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .padding(10)
-                    }
-                }
+            }
+            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 380)
         } detail: {
             detail
         }
@@ -52,6 +46,52 @@ struct ChatScreen: View {
                             .lineLimit(1)
                     }
                 }
+            }
+        }
+    }
+
+    private var sessions: some View {
+        SessionListView(sessions: model.sessions, selection: $selection)
+            .overlay {
+                if case .loading = model.sessionsState, model.sessions.isEmpty {
+                    ProgressView().controlSize(.small)
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if case .failed(let message) = model.sessionsState {
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(10)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var searchResults: some View {
+        switch model.searchState {
+        case .failed(let message):
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(10)
+        case .loading where model.hits.isEmpty:
+            ProgressView().controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 20)
+        case .ready, .loading:
+            if model.hits.isEmpty {
+                ContentUnavailableView("Nothing found", systemImage: "magnifyingglass", description: Text("No chat holds that."))
+            } else {
+                SearchResultsView(hits: model.hits, query: model.query, selection: Binding(
+                    get: { selection },
+                    set: { id in
+                        guard let id else { return }
+                        selection = id
+                        Task { await model.openSearchResult(id) }
+                    }
+                ))
             }
         }
     }

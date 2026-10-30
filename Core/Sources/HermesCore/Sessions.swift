@@ -61,6 +61,41 @@ public struct SessionSummary: Sendable, Equatable, Identifiable {
     }
 }
 
+/// One match of the search: the chat it was found in, the line around it, and which message held it.
+public struct SearchHit: Sendable, Equatable, Identifiable {
+    public let session: SessionSummary
+    public let snippet: String
+    /// The role of the message the match was found in: `user`, `assistant` or `tool`.
+    public let role: String?
+
+    public var id: String { "\(session.id)|\(snippet)" }
+
+    public init(session: SessionSummary, snippet: String, role: String?) {
+        self.session = session
+        self.snippet = snippet
+        self.role = role
+    }
+
+    /// Reads one result of `GET /api/sessions/search`: the session fields sit beside the match, under
+    /// `id` and `session_id` alike.
+    public init?(_ json: JSONValue) {
+        guard let session = SessionSummary(json) else { return nil }
+        self.init(session: session, snippet: json["snippet"]?.stringValue ?? "", role: json["role"]?.stringValue)
+    }
+
+    /// The snippet as one line: the dashboard keeps its newlines, a row of results cannot.
+    public var oneLine: String {
+        snippet
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    public static func page(_ json: JSONValue) -> [SearchHit] {
+        json["results"]?.arrayValue?.compactMap(SearchHit.init) ?? []
+    }
+}
+
 public struct SessionPage: Sendable, Equatable {
     public let sessions: [SessionSummary]
     public let total: Int

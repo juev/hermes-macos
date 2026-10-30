@@ -67,6 +67,14 @@ struct MarkdownTests {
         #expect(String(attributed.characters).contains("swift build"))
     }
 
+    @Test("The words a person looked for are marked")
+    func highlight() {
+        let attributed = Highlighting.attributed("Hermes on macOS and hermes again", query: "hermes")
+        let marked = attributed.runs.filter { $0.inlinePresentationIntent == .stronglyEmphasized }
+        #expect(marked.count == 2)
+        #expect(String(attributed.characters) == "Hermes on macOS and hermes again")
+    }
+
     @Test("Text that is not markdown is still text")
     func plain() {
         let attributed = Markdown.inline("Просто строка без разметки")

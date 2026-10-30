@@ -19,6 +19,18 @@ final class ChatModel {
     private(set) var transcriptState: Loading = .ready
     private(set) var selected: SessionSummary?
     private(set) var selection: String?
+    private(set) var hits: [SearchHit] = []
+    private(set) var searchState: Loading = .ready
+    private var searchTask: Task<Void, Never>?
+
+    /// What the person typed into the search field; an empty one shows the chats again.
+    var query = "" {
+        didSet { scheduleSearch() }
+    }
+
+    var isSearching: Bool {
+        !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
 
     init(session: DashboardSession) {
         self.session = session
@@ -50,6 +62,40 @@ final class ChatModel {
         } catch {
             transcriptState = .failed(ErrorMessage.of(error))
         }
+    }
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        let text = query
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            hits = []
+            searchState = .ready
+            return
+        }
+        searchTask = Task { [weak self] in
+            // A keystroke per letter would ask the dashboard once per letter.
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            await self?.runSearch(text)
+        }
+    }
+
+    private func runSearch(_ text: String) async {
+        searchState = .loading
+        do {
+            let found = try await session.search(text)
+            guard !Task.isCancelled else { return }
+            hits = found
+            searchState = .ready
+        } catch {
+            searchState = .failed(ErrorMessage.of(error))
+        }
+    }
+
+    /// Opens the chat a result was found in, and clears the search so the list comes back.
+    func openSearchResult(_ id: String) async {
+        query = ""
+        await open(id)
     }
 
     func reload() async {

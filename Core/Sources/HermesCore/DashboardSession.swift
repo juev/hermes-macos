@@ -95,6 +95,18 @@ public actor DashboardSession: SessionCredentials {
         return StoredMessage.page(json)
     }
 
+    /// The chats whose stored text matches [query], with the line around each match.
+    public func search(_ query: String, limit: Int = 50) async throws -> [SearchHit] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let token = try await accessToken()
+        let json = try await client.get("api/sessions/search", query: [
+            URLQueryItem(name: "q", value: trimmed),
+            URLQueryItem(name: "limit", value: String(limit))
+        ], token: token)
+        return SearchHit.page(json)
+    }
+
     public func socketTicket() async throws -> String? {
         guard let token = try await accessToken() else { return nil }
         return try await client.socketTicket(token: token)
