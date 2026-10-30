@@ -51,6 +51,8 @@ final class ChatModel {
     /// What the dashboard says about the turn: "thinking", a queued model, an error.
     private(set) var status: String?
     private(set) var sendError: String?
+    /// The question the agent waits on, if any.
+    private(set) var question: AgentQuestion?
 
     func load() async {
         sessionsState = .loading
@@ -93,6 +95,14 @@ final class ChatModel {
             let joined = try await chat.join(storedID: id)
             await chat.setEventSink { [weak self] event in
                 Task { @MainActor in self?.apply(event) }
+            }
+            await chat.setQuestionSink { [weak self] question in
+                Task { @MainActor in
+                    self?.question = question
+                    if case .approval(let approval) = question {
+                        TurnNotifier.shared.questionAsked(chat: self?.selected?.label ?? "Hermes", approval: approval)
+                    }
+                }
             }
             running = joined.running
             if joined.running {
@@ -155,6 +165,38 @@ final class ChatModel {
             running = false
             sendError = ErrorMessage.of(error)
         }
+    }
+
+    /// Answers the question the agent waits on.
+    func answer(_ choice: String) async {
+        guard let question else { return }
+        await chat?.answer(question, with: AgentAnswer.approval(choice))
+        self.question = nil
+    }
+
+    func answerClarify(_ answers: [String: String?]) async {
+        guard let question else { return }
+        await chat?.answer(question, with: AgentAnswer.clarify(answers))
+        self.question = nil
+    }
+
+    func answerSecret(_ value: String) async {
+        guard let question else { return }
+        await chat?.answer(question, with: AgentAnswer.secret(value))
+        self.question = nil
+    }
+
+    func dismissQuestion() async {
+        guard let question else { return }
+        switch question {
+        case .approval(let approval):
+            await chat?.answer(question, with: AgentAnswer.approval("deny"))
+        case .clarify:
+            await chat?.answer(question, with: AgentAnswer.clarifyCancelled)
+        case .secret:
+            await chat?.refuse(question)
+        }
+        self.question = nil
     }
 
     func stop() async {

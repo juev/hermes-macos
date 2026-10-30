@@ -109,6 +109,15 @@ struct ChatScreen: View {
                 ContentUnavailableView("Nothing here yet", systemImage: "bubble.left", description: Text("This chat has no stored messages."))
             } else {
                 VStack(spacing: 0) {
+                    if let question = model.question {
+                        QuestionCard(
+                            question: question,
+                            onChoice: { choice in Task { await model.answer(choice) } },
+                            onClarify: { answers in Task { await model.answerClarify(answers) } },
+                            onCancel: { Task { await model.dismissQuestion() } },
+                            onSecret: { value in Task { await model.answerSecret(value) } }
+                        )
+                    }
                     TranscriptView(
                         items: model.items,
                         loadFile: { path in try await model.fileData(path) },

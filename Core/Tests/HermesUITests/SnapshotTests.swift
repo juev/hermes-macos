@@ -176,6 +176,35 @@ struct SnapshotTests {
         #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("files.png").path))
     }
 
+    @Test("The question the agent waits on")
+    func question() throws {
+        let cards = VStack(alignment: .leading, spacing: 12) {
+            QuestionCardChrome(question: .approval(Approval(
+                id: "1",
+                kind: .command,
+                command: "rm -rf ~/Library/Developer/Xcode/DerivedData/Hermes-*",
+                description: "Deletes files outside the workspace",
+                choices: ["once", "always", "deny"]
+            )))
+            QuestionCardChrome(question: .approval(Approval(
+                id: "2",
+                kind: .mcp,
+                command: "Send the digest to the channel #general?",
+                description: "matrix.send_message",
+                choices: ["once", "deny"]
+            )))
+        }
+        .padding(.vertical, 20)
+        .frame(width: 820, alignment: .leading)
+        .background(Color(nsColor: .textBackgroundColor))
+        .environment(\.colorScheme, .light)
+
+        let renderer = ImageRenderer(content: cards)
+        renderer.scale = 2
+        try write(renderer.nsImage, to: "question.png")
+        #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("question.png").path))
+    }
+
     @Test("The composer")
     func composer() throws {
         let composer = VStack(spacing: 0) {

@@ -43,6 +43,8 @@ public actor ChatSession {
     private let gateway: GatewaySession
     private var liveID: String?
     private var sink: (@Sendable (GatewayEvent) -> Void)?
+    private var questions: (@Sendable (AgentQuestion) -> Void)?
+    private var pending: [String: ServerRequest] = [:]
 
     public init(gateway: GatewaySession) {
         self.gateway = gateway
@@ -53,6 +55,24 @@ public actor ChatSession {
     /// Who hears the events of this chat. Events of other sessions are not passed on.
     public func setEventSink(_ sink: (@Sendable (GatewayEvent) -> Void)?) {
         self.sink = sink
+    }
+
+    /// Who hears the questions of this chat: an approval, a choice, a secret. A question this client
+    /// does not answer is refused at once, so the agent does not wait for it.
+    public func setQuestionSink(_ sink: (@Sendable (AgentQuestion) -> Void)?) {
+        self.questions = sink
+    }
+
+    /// Answers a question the gateway asked. The request is kept until it is answered.
+    public func answer(_ question: AgentQuestion, with result: JSONValue) async {
+        guard let request = pending.removeValue(forKey: question.id) else { return }
+        await gateway.respond(to: request, result: result)
+    }
+
+    /// Refuses a question — a cancelled prompt, or a secret the person would not type.
+    public func refuse(_ question: AgentQuestion, reason: String = "cancelled") async {
+        guard let request = pending.removeValue(forKey: question.id) else { return }
+        await gateway.refuse(request, reason: reason)
     }
 
     /// Joins the live session of a stored chat. A dashboard that does not host it answers with a new
@@ -69,10 +89,16 @@ public actor ChatSession {
             throw ChatError.noLiveSession
         }
         liveID = live
-        await gateway.setHandlers(onEvent: { [weak self] event in
-            guard let self else { return }
-            Task { await self.receive(event) }
-        })
+        await gateway.setHandlers(
+            onEvent: { [weak self] event in
+                guard let self else { return }
+                Task { await self.receive(event) }
+            },
+            onRequest: { [weak self] request in
+                guard let self else { return }
+                Task { await self.receive(request) }
+            }
+        )
 
         let info = answer["info"]
         return Joined(
@@ -132,5 +158,16 @@ public actor ChatSession {
     private func receive(_ event: GatewayEvent) {
         guard let liveID, event.sessionID == liveID else { return }
         sink?(event)
+    }
+
+    private func receive(_ request: ServerRequest) {
+        // A question of another chat is not this chat's to answer.
+        if let session = request.params["session_id"]?.scalarString, session != liveID { return }
+        guard let question = AgentQuestion(request) else {
+            Task { await gateway.refuse(request, reason: "This client does not answer that question") }
+            return
+        }
+        pending[question.id] = request
+        questions?(question)
     }
 }

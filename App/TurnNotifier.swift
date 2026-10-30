@@ -19,6 +19,17 @@ final class TurnNotifier {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    /// A question the agent waits on is worth a banner even in front of the window: the turn is
+    /// stopped until someone answers.
+    func questionAsked(chat: String, approval: Approval) {
+        prepare()
+        let content = UNMutableNotificationContent()
+        content.title = NotificationText.title(chat: chat)
+        content.body = approval.summary.isEmpty ? approval.title : approval.summary
+        content.sound = .default
+        center.add(UNNotificationRequest(identifier: "question-\(UUID().uuidString)", content: content, trigger: nil))
+    }
+
     /// Posts what a finished turn says, when the window is not the thing in front.
     func turnFinished(chat: String, answer: String) {
         guard NotificationText.shouldNotify(appIsActive: NSApp.isActive, runningTurnWasHere: true) else { return }
