@@ -20,7 +20,8 @@ struct SnapshotTests {
         .user(UserBubble(
             key: "u1",
             text: "Посмотри, почему падает сборка после обновления Xcode. И покажи, что там с сигнатурой.",
-            attachments: [Attachment(path: "/tmp/build.log", name: "build.log", isImage: false)]
+            attachments: [Attachment(path: "/tmp/build.log", name: "build.log", isImage: false)],
+            timestamp: Date().addingTimeInterval(-86_400)
         )),
         .assistant(AssistantTurn(key: "a2", parts: [
             .reasoning("""
@@ -55,7 +56,7 @@ struct SnapshotTests {
             После этого линковка проходит; если нет — проверьте, что `xcode-select -p` смотрит на **Xcode 27.1**, а не на Command Line Tools.
             """)
         ])),
-        .user(UserBubble(key: "u3", text: "Сработало. Спасибо!")),
+        .user(UserBubble(key: "u3", text: "Сработало. Спасибо!", timestamp: Date())),
         .assistant(AssistantTurn(key: "a4", parts: [
             .text("Рад, что помогло. Если снова всплывёт — проверьте, не держит ли старый Xcode свои модули в `/Library/Developer`."),
             .tool(ToolRun(

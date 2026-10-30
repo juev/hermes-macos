@@ -39,12 +39,15 @@ public struct UserBubble: Sendable, Equatable {
     public let text: String
     public let attachments: [Attachment]
     public let rowID: Int?
+    /// When the dashboard wrote the message down; nil while it is still being sent.
+    public let timestamp: Date?
 
-    public init(key: String, text: String, attachments: [Attachment] = [], rowID: Int? = nil) {
+    public init(key: String, text: String, attachments: [Attachment] = [], rowID: Int? = nil, timestamp: Date? = nil) {
         self.key = key
         self.text = text
         self.attachments = attachments
         self.rowID = rowID
+        self.timestamp = timestamp
     }
 }
 
@@ -56,13 +59,16 @@ public struct AssistantTurn: Sendable, Equatable {
     public var streaming: Bool
     public var error: String?
     public var interrupted: Bool
+    /// When the first row of the turn was written down.
+    public var timestamp: Date?
 
-    public init(key: String, parts: [Part], streaming: Bool = false, error: String? = nil, interrupted: Bool = false) {
+    public init(key: String, parts: [Part], streaming: Bool = false, error: String? = nil, interrupted: Bool = false, timestamp: Date? = nil) {
         self.key = key
         self.parts = parts
         self.streaming = streaming
         self.error = error
         self.interrupted = interrupted
+        self.timestamp = timestamp
     }
 
     /// The answer without tools and reasoning: what copying and reading aloud take.
@@ -104,6 +110,14 @@ public struct AssistantTurn: Sendable, Equatable {
 public enum ChatItem: Sendable, Equatable {
     case user(UserBubble)
     case assistant(AssistantTurn)
+
+    /// When the item happened, where the dashboard says.
+    public var timestamp: Date? {
+        switch self {
+        case .user(let bubble): bubble.timestamp
+        case .assistant(let turn): turn.timestamp
+        }
+    }
 }
 
 public enum Transcript {
@@ -129,7 +143,8 @@ public enum Transcript {
                     key: "u\(message.rowID)",
                     text: text,
                     attachments: attachments + images,
-                    rowID: message.rowID
+                    rowID: message.rowID,
+                    timestamp: message.timestamp
                 )))
 
             case "assistant":
@@ -148,7 +163,11 @@ public enum Transcript {
                         arguments: call.arguments
                     )))
                 }
-                current = AssistantTurn(key: current?.key ?? "a\(message.rowID)", parts: parts)
+                current = AssistantTurn(
+                    key: current?.key ?? "a\(message.rowID)",
+                    parts: parts,
+                    timestamp: current?.timestamp ?? message.timestamp
+                )
 
             case "tool":
                 guard var turn = current else { continue }

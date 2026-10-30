@@ -17,10 +17,54 @@ public struct TranscriptView: View {
         self.openFile = openFile
     }
 
+    @State private var followsTheEnd = true
+
     public var body: some View {
-        ScrollView {
-            TranscriptContent(items: items, loadFile: loadFile, openFile: openFile)
+        ScrollViewReader { proxy in
+            ScrollView {
+                TranscriptContent(items: items, loadFile: loadFile, openFile: openFile)
+                // A stream of words grows under the fold; this is what the view keeps in sight.
+                Color.clear.frame(height: 1).id(Self.bottomID)
+            }
+            .onAppear { scrollToEnd(proxy, animated: false) }
+            .onChange(of: items) { _, _ in
+                if followsTheEnd { scrollToEnd(proxy, animated: true) }
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y + geometry.containerSize.height >= geometry.contentSize.height - 80
+            } action: { _, atEnd in
+                followsTheEnd = atEnd
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !followsTheEnd {
+                    Button {
+                        scrollToEnd(proxy, animated: true)
+                    } label: {
+                        Label("Latest", systemImage: "arrow.down")
+                            .font(Theme.Fonts.sessionMeta)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .clipShape(Capsule())
+                    .padding(.trailing, Theme.Metrics.contentPadding)
+                    .padding(.bottom, 12)
+                }
+            }
         }
+    }
+
+    private static let bottomID = "transcript-bottom"
+
+    private func scrollToEnd(_ proxy: ScrollViewProxy, animated: Bool) {
+        if animated {
+            withAnimation(.snappy(duration: 0.2)) {
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            }
+        } else {
+            proxy.scrollTo(Self.bottomID, anchor: .bottom)
+        }
+        followsTheEnd = true
     }
 }
 
@@ -42,8 +86,11 @@ public struct TranscriptContent: View {
 
     public var body: some View {
         LazyVStack(alignment: .leading, spacing: Theme.Metrics.turnSpacing) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                switch item {
+            ForEach(Array(TranscriptDays.group(items).enumerated()), id: \.offset) { _, entry in
+                if let day = entry.day {
+                    DaySeparator(day: day)
+                }
+                switch entry.item {
                 case .user(let bubble):
                     MessageView(bubble: bubble)
                 case .assistant(let turn):
@@ -55,6 +102,30 @@ public struct TranscriptContent: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, Theme.Metrics.contentPadding)
         .padding(.vertical, 24)
+    }
+}
+
+/// The line that opens a day: the date in the middle of two rules, quiet enough to skip.
+struct DaySeparator: View {
+    let day: Date
+
+    var body: some View {
+        HStack(spacing: 10) {
+            rule
+            Text(TranscriptDays.label(for: day))
+                .font(Theme.Fonts.sessionMeta)
+                .foregroundStyle(.tertiary)
+                .fixedSize()
+            rule
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var rule: some View {
+        Rectangle()
+            .fill(Theme.Palette.reasoningRule)
+            .frame(height: 1)
+            .opacity(0.5)
     }
 }
 
