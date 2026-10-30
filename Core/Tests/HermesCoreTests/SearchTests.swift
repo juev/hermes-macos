@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import HermesCore
 
-@Suite("Search over the chats")
+@Suite("Search over the chats", .enabled(if: Fixtures.available))
 struct SearchTests {
     @Test("The results the dashboard answered")
     func results() throws {

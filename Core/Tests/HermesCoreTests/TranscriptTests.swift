@@ -4,6 +4,11 @@ import Testing
 
 /// The payloads the dashboard really answered, copied from the contract by `scripts/sync-fixtures.sh`.
 enum Fixtures {
+    /// The payloads come from the contract repository and are copied in by `scripts/sync-fixtures.sh`;
+    /// a checkout without them — continuous integration, for one — runs the other suites and leaves
+    /// these alone, which is what that script promises.
+    static let available = Bundle.module.url(forResource: "list", withExtension: "json", subdirectory: "Fixtures/sessions") != nil
+
     static func json(_ area: String, _ name: String) -> JSONValue? {
         guard let url = Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures/\(area)"),
               let data = try? Data(contentsOf: url) else { return nil }
@@ -11,7 +16,7 @@ enum Fixtures {
     }
 }
 
-@Suite("A chat as the sidebar lists it")
+@Suite("A chat as the sidebar lists it", .enabled(if: Fixtures.available))
 struct SessionTests {
     @Test("The list of sessions the dashboard answered")
     func list() throws {
@@ -75,7 +80,7 @@ struct SessionTests {
     }
 }
 
-@Suite("The stored history of one chat")
+@Suite("The stored history of one chat", .enabled(if: Fixtures.available))
 struct TranscriptTests {
     private func messages() throws -> [StoredMessage] {
         guard let json = Fixtures.json("sessions", "transcript") else {
@@ -264,7 +269,7 @@ enum FixtureError: Error {
     case missing
 }
 
-@Suite("What the dashboard writes into a message")
+@Suite("What the dashboard writes into a message", .enabled(if: Fixtures.available))
 struct TextParsingTests {
     @Test("The attached context is cut and the references become attachments")
     func attachments() {
