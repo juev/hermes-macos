@@ -34,40 +34,29 @@ struct PushStore {
     }
 
     func loadKeys() -> PushKeys? {
-        if let cached = PushStore.keysCache { return cached }
-        guard let data = Keychain.read(account: "push-keys") else { return nil }
-        let keys = try? JSONDecoder().decode(PushKeys.self, from: data)
-        PushStore.keysCache = keys
-        return keys
+        AppSecrets.vault.push().keys
     }
 
-    /// The Keychain asks the person once per item per launch, so an item read is kept for the launch.
-    @MainActor private static var keysCache: PushKeys?
-    @MainActor private static var credentialsCache: NtfyCredentials?
-
     func saveKeys(_ keys: PushKeys) throws {
-        try Keychain.write(try JSONEncoder().encode(keys), account: "push-keys")
+        var secrets = AppSecrets.vault.push()
+        secrets.keys = keys
+        AppSecrets.vault.savePush(secrets)
     }
 
     func loadCredentials() -> NtfyCredentials? {
-        if let cached = PushStore.credentialsCache { return cached }
-        guard let data = Keychain.read(account: "push-credentials"),
-              let values = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
-        if let token = values["token"], !token.isEmpty {
-            let credentials = NtfyCredentials(kind: .token(token))
-            PushStore.credentialsCache = credentials
-            return credentials
+        let secrets = AppSecrets.vault.push()
+        if let token = secrets.token, !token.isEmpty {
+            return NtfyCredentials(kind: .token(token))
         }
-        guard let user = values["user"], let password = values["password"], !user.isEmpty else { return nil }
-        let credentials = NtfyCredentials(kind: .basic(user: user, password: password))
-        PushStore.credentialsCache = credentials
-        return credentials
+        guard let user = secrets.user, let password = secrets.password, !user.isEmpty else { return nil }
+        return NtfyCredentials(kind: .basic(user: user, password: password))
     }
 
     func saveCredentials(user: String, password: String) throws {
-        PushStore.credentialsCache = nil
-        let values = ["user": user, "password": password]
-        try Keychain.write(try JSONEncoder().encode(values), account: "push-credentials")
+        var secrets = AppSecrets.vault.push()
+        secrets.user = user
+        secrets.password = password
+        AppSecrets.vault.savePush(secrets)
     }
 
     func forgetCredentials() {

@@ -2,6 +2,12 @@ import SwiftUI
 
 @main
 struct HermesApp: App {
+    init() {
+        // Before anything reads a secret: what earlier builds kept in three Keychain items becomes
+        // the one this build opens, so a launch asks for a password once.
+        VaultMigration.runIfNeeded(vault: AppSecrets.vault)
+    }
+
     var body: some Scene {
         WindowGroup {
             RootView()

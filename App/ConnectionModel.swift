@@ -148,7 +148,7 @@ final class ConnectionModel {
             let status = try await client.status()
             // The Keychain may already hold tokens of this dashboard: use them instead of sending
             // the person through the browser again on every launch.
-            let session = DashboardSession(endpoint: endpoint, storage: KeychainTokenStorage())
+            let session = DashboardSession(endpoint: endpoint, storage: VaultTokenStorage(vault: AppSecrets.vault))
             try? await session.load()
             if status.authRequired {
                 if try await needsBrowserSignIn(session) {
