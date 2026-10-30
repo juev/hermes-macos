@@ -145,6 +145,26 @@ final class ChatModel {
         }
     }
 
+    /// Reads the list again without touching the chat on screen: a chat made on a phone, in Telegram
+    /// or by a cron run is a chat this window has no event for.
+    func refreshSessions() async {
+        guard let payload = try? await session.sessionsPayload(archived: showingArchive ? .only : .exclude) else { return }
+        cache.write(payload, name: ChatCache.sessionsName(server: server))
+        let previous = sessions
+        take(SessionPage(payload))
+        sessionsState = .ready
+        // The open chat's own row follows the list: its title and count change while it is read.
+        if let selection, let updated = sessions.first(where: { $0.id == selection }) {
+            selected = updated
+        }
+        let known = Set(previous.map(\.id))
+        let added = sessions.filter { !known.contains($0.id) }
+        if !added.isEmpty {
+            Log.app.debug("sessions: \(added.count, privacy: .public) new chat(s) from elsewhere")
+            prefetch()
+        }
+    }
+
     /// Reads the chats around the open one while nothing else needs the wire, so opening one of them
     /// paints from disk instead of waiting.
     private func prefetch() {
@@ -503,6 +523,11 @@ final class ChatModel {
             Task { await self.adoptDraft() }
         }
 
+        // A session this window does not hold, or a platform that started one: the list has news.
+        if ["session.info", "session.created", "session.updated", "platforms.changed"].contains(event.type) {
+            Task { await self.scheduleListRefresh() }
+        }
+
         // A turn that ends while the window is behind another one is what a banner is for.
         if event.type == "message.complete", wasRunning {
             let answer: String
@@ -634,6 +659,18 @@ final class ChatModel {
         selected = nil
         items = []
         await load()
+    }
+
+    /// The list is read once for a burst of events, not once an event.
+    private var listRefresh: Task<Void, Never>?
+
+    private func scheduleListRefresh() async {
+        listRefresh?.cancel()
+        listRefresh = Task {
+            try? await Task.sleep(for: .milliseconds(600))
+            guard !Task.isCancelled else { return }
+            await refreshSessions()
+        }
     }
 
     /// Pins a chat on this Mac, where a plain dashboard refuses to keep it.

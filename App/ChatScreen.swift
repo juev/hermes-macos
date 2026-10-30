@@ -53,6 +53,18 @@ struct ChatScreen: View {
             }
         }
         .task { await model.load() }
+        // The list is read again while the window is open: a chat made on a phone is not an event this
+        // app receives. Quietly, so the open chat is not disturbed.
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(45))
+                if Task.isCancelled { return }
+                await model.refreshSessions()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            Task { await model.refreshSessions() }
+        }
         .onChange(of: selection) { _, id in
             guard let id, id != model.selection else { return }
             Task { await model.open(id) }
