@@ -55,8 +55,6 @@ struct ChatSessionTests {
         #expect(opened.running)
         #expect(opened.model == "gpt-6.1-sol")
         #expect(opened.streamed == "half an ans")
-        let current = await chat.currentLiveID()
-        #expect(current == "live-1")
 
         let request = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "session.resume" })
         #expect(request["params"]?["session_id"]?.stringValue == "stored-1")
@@ -361,8 +359,6 @@ struct NewChatTests {
         let answer: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": ["session_id": "live-new"]]
         socket.push(answer.encodedString)
         #expect(try await creating == "live-new")
-        let live = await chat.currentLiveID()
-        #expect(live == "live-new")
 
         // The new session takes prompts at once.
         async let sending = chat.submit("Привет")

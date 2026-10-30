@@ -97,9 +97,9 @@ public actor GatewaySession {
         while true {
             if case .ready = state, let connection { return connection }
             switch state {
-            case .stopped, .idle where !wanted:
+            case .stopped, .failed:
                 throw GatewayError.notConnected
-            case .failed:
+            case .idle where !wanted:
                 throw GatewayError.notConnected
             default:
                 break

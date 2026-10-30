@@ -4,15 +4,15 @@ import SwiftUI
 /// The history of one chat, drawn as turns: the person's messages and the agent's answers.
 public struct TranscriptView: View {
     public let items: [ChatItem]
-    public let loadFile: (@Sendable (String) async throws -> Data)?
-    public let openFile: (@Sendable (String) -> Void)?
-    public let onAskAgain: ((UserBubble) -> Void)?
+    public let loadFile: (@MainActor (String) async throws -> Data)?
+    public let openFile: (@MainActor (String) -> Void)?
+    public let onAskAgain: (@MainActor (UserBubble) -> Void)?
 
     public init(
         items: [ChatItem],
-        loadFile: (@Sendable (String) async throws -> Data)? = nil,
-        openFile: (@Sendable (String) -> Void)? = nil,
-        onAskAgain: ((UserBubble) -> Void)? = nil
+        loadFile: (@MainActor (String) async throws -> Data)? = nil,
+        openFile: (@MainActor (String) -> Void)? = nil,
+        onAskAgain: (@MainActor (UserBubble) -> Void)? = nil
     ) {
         self.items = items
         self.loadFile = loadFile
@@ -74,15 +74,15 @@ public struct TranscriptView: View {
 /// The turns themselves, without the scroll view around them: what a snapshot can draw.
 public struct TranscriptContent: View {
     public let items: [ChatItem]
-    public let loadFile: (@Sendable (String) async throws -> Data)?
-    public let openFile: (@Sendable (String) -> Void)?
-    public let onAskAgain: ((UserBubble) -> Void)?
+    public let loadFile: (@MainActor (String) async throws -> Data)?
+    public let openFile: (@MainActor (String) -> Void)?
+    public let onAskAgain: (@MainActor (UserBubble) -> Void)?
 
     public init(
         items: [ChatItem],
-        loadFile: (@Sendable (String) async throws -> Data)? = nil,
-        openFile: (@Sendable (String) -> Void)? = nil,
-        onAskAgain: ((UserBubble) -> Void)? = nil
+        loadFile: (@MainActor (String) async throws -> Data)? = nil,
+        openFile: (@MainActor (String) -> Void)? = nil,
+        onAskAgain: (@MainActor (UserBubble) -> Void)? = nil
     ) {
         self.items = items
         self.loadFile = loadFile
@@ -211,7 +211,7 @@ struct CronReportView: View {
 /// What the person wrote: a bubble on the right, as far from the answer as the turn spacing.
 struct MessageView: View {
     let bubble: UserBubble
-    var onAskAgain: ((UserBubble) -> Void)?
+    var onAskAgain: (@MainActor (UserBubble) -> Void)?
 
     var body: some View {
         HStack {
@@ -277,8 +277,8 @@ struct AttachmentChip: View {
 /// One answer: its reasoning, its words and the tools it ran, in the order it produced them.
 struct AnswerView: View {
     let turn: AssistantTurn
-    let loadFile: (@Sendable (String) async throws -> Data)?
-    let openFile: (@Sendable (String) -> Void)?
+    let loadFile: (@MainActor (String) async throws -> Data)?
+    let openFile: (@MainActor (String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.Metrics.partSpacing) {
@@ -381,6 +381,20 @@ struct ToolRunView: View {
                             .truncationMode(.middle)
                     }
                     Spacer(minLength: 0)
+                    if let summary = run.summary, !summary.isEmpty, !expanded {
+                        Text(summary)
+                            .font(Theme.Fonts.sessionMeta)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 240, alignment: .trailing)
+                    }
+                    if let duration = run.durationSeconds {
+                        Text(String(format: "%.1fs", duration))
+                            .font(Theme.Fonts.sessionMeta)
+                            .monospacedDigit()
+                            .foregroundStyle(.tertiary)
+                    }
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(.tertiary)

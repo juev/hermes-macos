@@ -14,8 +14,9 @@ struct DeliveredFilesTests {
         let answer = "Готово.\n\nMEDIA: /opt/hermes/reports/build.md\n"
         let turn = turn(answer)
         #expect(turn.deliveredFiles == ["/opt/hermes/reports/build.md"])
-        #expect(!turn.displayText.contains("MEDIA:"))
-        #expect(turn.displayText.hasPrefix("Готово."))
+        // The view strips the directive from each part before drawing it.
+        #expect(!TextParsing.stripMedia(turn.text).contains("MEDIA:"))
+        #expect(TextParsing.stripMedia(turn.text).hasPrefix("Готово."))
     }
 
     @Test("Prose that mentions the directive is not a file")

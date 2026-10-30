@@ -8,25 +8,25 @@ import Foundation
 /// `NSRegularExpression` because two of them need a backreference and two a lookbehind, which Swift's
 /// own `Regex` does not have.
 public enum PlainText {
-    // Compiled once at first use and immutable afterwards; matching on one is thread-safe, which the
-    // type does not promise of itself, so the constants say it for it.
-    nonisolated(unsafe) private static let fence = pattern(#"(?m)^[\t ]*(```|~~~).*$\n?"#)
-    nonisolated(unsafe) private static let rule = pattern(#"(?m)^[\t ]*([-*_])([\t ]*\1){2,}[\t ]*$"#)
-    nonisolated(unsafe) private static let tableDivider = pattern(#"(?m)^[\t ]*\|?[\t ]*:?-+:?[\t ]*(\|[\t ]*:?-+:?[\t ]*)+\|?[\t ]*$\n?"#)
-    nonisolated(unsafe) private static let tableRow = pattern(#"^[\t ]*\|(.*?)\|?[\t ]*$"#)
-    nonisolated(unsafe) private static let tableCells = pattern(#"[\t ]*\|[\t ]*"#)
-    nonisolated(unsafe) private static let heading = pattern(#"(?m)^[\t ]*#{1,6}[\t ]+(.*?)[\t ]*#*[\t ]*$"#)
-    nonisolated(unsafe) private static let quote = pattern(#"(?m)^[\t ]*>[\t ]?"#)
-    nonisolated(unsafe) private static let task = pattern(#"(?m)^([\t ]*)[-*+][\t ]+\[[ xX]][\t ]+"#)
-    nonisolated(unsafe) private static let bullet = pattern(#"(?m)^([\t ]*)[-*+][\t ]+"#)
-    nonisolated(unsafe) private static let image = pattern(#"!\[([^\]]*)]\([^)]*\)"#)
-    nonisolated(unsafe) private static let link = pattern(#"\[([^\]]+)]\([^)]*\)"#)
-    nonisolated(unsafe) private static let code = pattern(#"`([^`\n]+)`"#)
-    nonisolated(unsafe) private static let strong = pattern(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
-    nonisolated(unsafe) private static let strike = pattern(#"~~(?=\S)(.+?)(?<=\S)~~"#)
-    nonisolated(unsafe) private static let emphasisStar = pattern(#"(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![*\w])"#)
-    nonisolated(unsafe) private static let emphasisUnderscore = pattern(#"(?<![_\w])_(?=\S)([^_\n]+?)(?<=\S)_(?![_\w])"#)
-    nonisolated(unsafe) private static let blankLines = pattern(#"\n{3,}"#)
+    // Compiled once at first use and immutable afterwards; `NSRegularExpression` says it is safe to
+    // share, so these need no ceremony.
+    private static let fence = pattern(#"(?m)^[\t ]*(```|~~~).*$\n?"#)
+    private static let rule = pattern(#"(?m)^[\t ]*([-*_])([\t ]*\1){2,}[\t ]*$"#)
+    private static let tableDivider = pattern(#"(?m)^[\t ]*\|?[\t ]*:?-+:?[\t ]*(\|[\t ]*:?-+:?[\t ]*)+\|?[\t ]*$\n?"#)
+    private static let tableRow = pattern(#"^[\t ]*\|(.*?)\|?[\t ]*$"#)
+    private static let tableCells = pattern(#"[\t ]*\|[\t ]*"#)
+    private static let heading = pattern(#"(?m)^[\t ]*#{1,6}[\t ]+(.*?)[\t ]*#*[\t ]*$"#)
+    private static let quote = pattern(#"(?m)^[\t ]*>[\t ]?"#)
+    private static let task = pattern(#"(?m)^([\t ]*)[-*+][\t ]+\[[ xX]][\t ]+"#)
+    private static let bullet = pattern(#"(?m)^([\t ]*)[-*+][\t ]+"#)
+    private static let image = pattern(#"!\[([^\]]*)]\([^)]*\)"#)
+    private static let link = pattern(#"\[([^\]]+)]\([^)]*\)"#)
+    private static let code = pattern(#"`([^`\n]+)`"#)
+    private static let strong = pattern(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
+    private static let strike = pattern(#"~~(?=\S)(.+?)(?<=\S)~~"#)
+    private static let emphasisStar = pattern(#"(?<![*\w])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![*\w])"#)
+    private static let emphasisUnderscore = pattern(#"(?<![_\w])_(?=\S)([^_\n]+?)(?<=\S)_(?![_\w])"#)
+    private static let blankLines = pattern(#"\n{3,}"#)
 
     public static func of(_ markdown: String) -> String {
         var text = markdown.replacingOccurrences(of: "\r\n", with: "\n")

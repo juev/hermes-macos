@@ -45,7 +45,7 @@ final class TurnNotifier {
 
     /// Posts what a finished turn says, when the window is not the thing in front.
     func turnFinished(chat: String, answer: String) {
-        guard NotificationText.shouldNotify(appIsActive: NSApp.isActive, runningTurnWasHere: true) else { return }
+        guard NotificationText.shouldNotify(appIsActive: NSApp.isActive) else { return }
         prepare()
 
         let content = UNMutableNotificationContent()

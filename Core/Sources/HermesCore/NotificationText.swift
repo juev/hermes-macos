@@ -24,9 +24,9 @@ public enum NotificationText {
         return cut + "…"
     }
 
-    /// True when a finished turn deserves a banner: the person is looking elsewhere.
-    public static func shouldNotify(appIsActive: Bool, runningTurnWasHere: Bool) -> Bool {
-        // A turn that ends while the window is in front needs no banner — the answer is right there.
-        !appIsActive || !runningTurnWasHere
+    /// True when a finished turn deserves a banner: the person is looking elsewhere, so the answer is
+    /// not already in front of them.
+    public static func shouldNotify(appIsActive: Bool) -> Bool {
+        !appIsActive
     }
 }

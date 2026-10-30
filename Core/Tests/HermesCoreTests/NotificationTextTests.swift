@@ -32,7 +32,7 @@ struct NotificationTextTests {
 
     @Test("A banner is for a person looking elsewhere")
     func when() {
-        #expect(NotificationText.shouldNotify(appIsActive: false, runningTurnWasHere: true))
-        #expect(!NotificationText.shouldNotify(appIsActive: true, runningTurnWasHere: true))
+        #expect(NotificationText.shouldNotify(appIsActive: false))
+        #expect(!NotificationText.shouldNotify(appIsActive: true))
     }
 }

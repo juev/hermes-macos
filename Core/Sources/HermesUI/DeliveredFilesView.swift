@@ -6,13 +6,13 @@ import SwiftUI
 /// with its name and its kind, and every one of them opens on a click.
 public struct DeliveredFilesView: View {
     public let paths: [String]
-    public let load: (@Sendable (String) async throws -> Data)?
-    public let open: (@Sendable (String) -> Void)?
+    public let load: (@MainActor (String) async throws -> Data)?
+    public let open: (@MainActor (String) -> Void)?
 
     public init(
         paths: [String],
-        load: (@Sendable (String) async throws -> Data)? = nil,
-        open: (@Sendable (String) -> Void)? = nil
+        load: (@MainActor (String) async throws -> Data)? = nil,
+        open: (@MainActor (String) -> Void)? = nil
     ) {
         self.paths = paths
         self.load = load
@@ -30,8 +30,8 @@ public struct DeliveredFilesView: View {
 
 struct DeliveredFileCard: View {
     let path: String
-    let load: (@Sendable (String) async throws -> Data)?
-    let open: (@Sendable (String) -> Void)?
+    let load: (@MainActor (String) async throws -> Data)?
+    let open: (@MainActor (String) -> Void)?
 
     @State private var image: NSImage?
     @State private var failed = false

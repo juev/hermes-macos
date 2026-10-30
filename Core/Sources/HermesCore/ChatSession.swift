@@ -50,8 +50,6 @@ public actor ChatSession {
         self.gateway = gateway
     }
 
-    public func currentLiveID() -> String? { liveID }
-
     /// Who hears the events of this chat. Events of other sessions are not passed on.
     public func setEventSink(_ sink: (@Sendable (GatewayEvent) -> Void)?) {
         self.sink = sink

@@ -252,7 +252,7 @@ final class ChatModel {
     func dismissQuestion() async {
         guard let question else { return }
         switch question {
-        case .approval(let approval):
+        case .approval:
             await chat?.answer(question, with: AgentAnswer.approval("deny"))
         case .clarify:
             await chat?.answer(question, with: AgentAnswer.clarifyCancelled)
