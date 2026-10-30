@@ -22,6 +22,8 @@ final class PushModel {
     private(set) var state: State = .off
     private(set) var detail: String?
     private(set) var lastPush: PushMessage?
+    /// What the window does with a push: read the list again, and decide whether it deserves a banner.
+    var onPush: ((PushMessage) -> Void)?
 
     private let session: DashboardSession
     private let store: PushStore
@@ -135,7 +137,7 @@ final class PushModel {
             onPush: { [weak self] push in
                 Task { @MainActor in
                     self?.lastPush = push
-                    TurnNotifier.shared.pushArrived(push)
+                    self?.onPush?(push)
                 }
             },
             onState: { [weak self] listenerState in

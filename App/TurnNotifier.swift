@@ -21,7 +21,10 @@ final class TurnNotifier {
 
     /// A push of `hermes-push`: a turn that ended somewhere the socket does not reach — Telegram,
     /// Matrix, a cron run.
-    func pushArrived(_ push: PushMessage) {
+    /// A push is about a turn somewhere else — Telegram, a phone, a cron run — so it is worth a banner
+    /// even when the window is in front, unless the window is already showing that very chat.
+    func pushArrived(_ push: PushMessage, aboutTheOpenChat: Bool = false) {
+        if NSApp.isActive && aboutTheOpenChat { return }
         prepare()
         let content = UNMutableNotificationContent()
         let platform = push.platform ?? ""

@@ -15,14 +15,26 @@ public enum Markdown {
             case listItem(ordered: Bool, index: Int)
             case quote
             case rule
+            /// A table: [rows] holds the header first, then one array per row.
+            case table
         }
 
         public let kind: Kind
         public let text: String
+        /// For a table: the header row and the rows under it. Empty for every other kind.
+        public let rows: [[String]]
+        /// For a table: where each column's text sits, from the `:---:` markers.
+        public let alignments: [Alignment]
 
-        public init(kind: Kind, text: String) {
+        public enum Alignment: Equatable {
+            case leading, center, trailing
+        }
+
+        public init(kind: Kind, text: String, rows: [[String]] = [], alignments: [Alignment] = []) {
             self.kind = kind
             self.text = text
+            self.rows = rows
+            self.alignments = alignments
         }
     }
 
@@ -60,6 +72,30 @@ public enum Markdown {
             if trimmed.isEmpty {
                 flushParagraph()
                 index += 1
+                continue
+            }
+
+            // A table: a row of cells, a line of dashes under it, then the rows.
+            if trimmed.contains("|"), let separator = tableSeparator(lines, after: index) {
+                flushParagraph()
+                let header = cells(of: trimmed)
+                let alignments = separator
+                var rows = [header]
+                index += 2
+                while index < lines.count {
+                    let candidate = lines[index].trimmingCharacters(in: .whitespaces)
+                    guard candidate.contains("|"), !candidate.isEmpty else { break }
+                    rows.append(cells(of: candidate))
+                    index += 1
+                }
+                let width = rows.map(\.count).max() ?? 0
+                let squared = rows.map { row in row + Array(repeating: "", count: max(0, width - row.count)) }
+                blocks.append(Block(
+                    kind: .table,
+                    text: squared.map { $0.joined(separator: " | ") }.joined(separator: "\n"),
+                    rows: squared,
+                    alignments: alignments + Array(repeating: .leading, count: max(0, width - alignments.count))
+                ))
                 continue
             }
 
@@ -115,6 +151,32 @@ public enum Markdown {
             attributed[range].backgroundColor = Theme.Palette.inlineCode
         }
         return attributed
+    }
+
+    /// The cells of a table row, without the pipes that hold it.
+    public static func cells(of line: String) -> [String] {
+        var trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("|") { trimmed.removeFirst() }
+        if trimmed.hasSuffix("|") { trimmed.removeLast() }
+        return trimmed
+            .components(separatedBy: "|")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// The alignment markers of the line under a header, when that line is one.
+    public static func tableSeparator(_ lines: [String], after index: Int) -> [Block.Alignment]? {
+        guard index + 1 < lines.count else { return nil }
+        let cells = cells(of: lines[index + 1])
+        guard !cells.isEmpty else { return nil }
+        var alignments: [Block.Alignment] = []
+        for cell in cells {
+            let dashes = cell.filter { $0 == "-" }.count
+            guard dashes >= 1, cell.allSatisfy({ $0 == "-" || $0 == ":" }) else { return nil }
+            let left = cell.hasPrefix(":")
+            let right = cell.hasSuffix(":")
+            alignments.append(left && right ? .center : right ? .trailing : .leading)
+        }
+        return alignments
     }
 
     private static func headingLevel(_ line: String) -> Int? {
@@ -248,7 +310,57 @@ public struct MarkdownText: View {
 
         case .listItem:
             listRow(block)
+
+        case .table:
+            TableView(rows: block.rows, alignments: block.alignments)
         }
+    }
+}
+
+/// A Markdown table as the agent writes them: a header, a rule, and the numbers under it. Numbers
+/// line up on the right by themselves when the whole column is one.
+struct TableView: View {
+    let rows: [[String]]
+    let alignments: [Markdown.Block.Alignment]
+
+    var body: some View {
+        Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 5) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                GridRow {
+                    ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
+                        Text(Markdown.inline(cell))
+                            .font(index == 0 ? .system(size: 13, weight: .semibold) : Theme.Fonts.answer)
+                            .foregroundStyle(index == 0 ? .primary : .primary)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .gridColumnAlignment(alignment(column: column))
+                    }
+                }
+                if index == 0 {
+                    Divider()
+                        .gridCellUnsizedAxes(.horizontal)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Theme.Palette.inlineCode, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+
+    /// Numbers on the right, words on the left, `:---:` in the middle.
+    private func alignment(column: Int) -> HorizontalAlignment {
+        let declared = alignments.indices.contains(column) ? alignments[column] : .leading
+        if declared != .leading {
+            return declared == .center ? .center : .trailing
+        }
+        let columnCells = rows.dropFirst().compactMap { row in row.indices.contains(column) ? row[column] : nil }
+        guard !columnCells.isEmpty else { return .leading }
+        let numeric = columnCells.allSatisfy { cell in
+            let trimmed = cell.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty else { return true }
+            return Double(trimmed.replacingOccurrences(of: ",", with: ".")) != nil
+        }
+        return numeric ? .trailing : .leading
     }
 }
 

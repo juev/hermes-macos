@@ -86,6 +86,15 @@ final class ChatModel {
         self.gateway = gateway
         self.hub = hub
         self.push = PushModel(session: session)
+        // A push means a turn ended somewhere else — a chat made on a phone is not an event this
+        // window receives, so the list is read again and the banner says what arrived.
+        self.push.onPush = { [weak self] push in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.refreshSessions()
+            }
+            TurnNotifier.shared.pushArrived(push, aboutTheOpenChat: push.sessionID == self.selection)
+        }
     }
 
     /// What the person is writing.

@@ -261,6 +261,32 @@ struct SnapshotTests {
         #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("work.png").path))
     }
 
+    @Test("A table in an answer")
+    func table() throws {
+        let answer = """
+        На момент проверки нагрузка на всех четырёх серверах невысокая.
+
+        | Сервер | Load average | CPU | Доступно RAM | Диск |
+        |---|---|---:|---:|---:|
+        | loffe | 0.42 | 3% | 47 GB | 341 GB |
+        | ams | 0.11 | 1% | 3,8 GB | 61 GB |
+        | moscow | 1.08 | 12% | 900 MB | 24 GB |
+        | nas | 0.07 | 2% | 2,1 GB | 8,4 TB |
+
+        Прирост только на moscow: там сейчас идёт выгрузка резервных копий.
+        """
+        let view = MarkdownText(answer)
+            .padding(Theme.Metrics.contentPadding)
+            .frame(width: 760, alignment: .leading)
+            .background(Color(nsColor: .textBackgroundColor))
+            .environment(\.colorScheme, .light)
+
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 2
+        try write(renderer.nsImage, to: "table.png")
+        #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("table.png").path))
+    }
+
     @Test("The composer")
     func composer() throws {
         let composer = VStack(spacing: 0) {
