@@ -6,6 +6,7 @@ import SwiftUI
 struct ChatScreen: View {
     @State private var model: ChatModel
     @State private var selection: SessionSummary.ID?
+    @State private var showingPush = false
 
     let onDisconnect: () -> Void
 
@@ -36,7 +37,18 @@ struct ChatScreen: View {
         .onChange(of: model.selection) { _, id in
             if selection != id { selection = id }
         }
+        .sheet(isPresented: $showingPush) {
+            PushSettingsView(model: model.push)
+        }
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    showingPush = true
+                } label: {
+                    Label("Push", systemImage: "bell")
+                }
+                .help("Push from the dashboard when a turn ends anywhere")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     onDisconnect()

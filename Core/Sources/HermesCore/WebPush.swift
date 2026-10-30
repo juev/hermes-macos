@@ -3,7 +3,7 @@ import Foundation
 
 /// The keys a push subscription holds: the private half of the pair the dashboard encrypted to, and
 /// the auth secret both sides share.
-public struct PushKeys: Sendable, Equatable {
+public struct PushKeys: Sendable, Equatable, Codable {
     /// The subscription's private key, DER-encoded PKCS#8 as the client keeps it.
     public let privateKeyDER: Data
     /// The uncompressed public point, `p256dh` in the subscription, 65 bytes.

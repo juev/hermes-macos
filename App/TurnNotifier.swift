@@ -19,6 +19,18 @@ final class TurnNotifier {
         center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 
+    /// A push of `hermes-push`: a turn that ended somewhere the socket does not reach — Telegram,
+    /// Matrix, a cron run.
+    func pushArrived(_ push: PushMessage) {
+        prepare()
+        let content = UNMutableNotificationContent()
+        let platform = push.platform ?? ""
+        content.title = platform.isEmpty ? "Hermes" : "Hermes · \(platform)"
+        content.body = push.oneLine.isEmpty ? (push.job ?? "A turn is finished.") : push.oneLine
+        content.sound = .default
+        center.add(UNNotificationRequest(identifier: "push-\(UUID().uuidString)", content: content, trigger: nil))
+    }
+
     /// A question the agent waits on is worth a banner even in front of the window: the turn is
     /// stopped until someone answers.
     func questionAsked(chat: String, approval: Approval) {

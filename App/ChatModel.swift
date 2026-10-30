@@ -16,6 +16,8 @@ final class ChatModel {
 
     private let session: DashboardSession
     private let gateway: GatewaySession
+    /// The push of this dashboard, with the topic and keys it needs.
+    let push: PushModel
     private var chat: ChatSession?
 
     private(set) var sessions: [SessionSummary] = []
@@ -40,6 +42,7 @@ final class ChatModel {
     init(session: DashboardSession, gateway: GatewaySession) {
         self.session = session
         self.gateway = gateway
+        self.push = PushModel(session: session)
     }
 
     /// What the person is writing.
@@ -55,6 +58,7 @@ final class ChatModel {
     private(set) var question: AgentQuestion?
 
     func load() async {
+        await push.restoreIfEnabled()
         sessionsState = .loading
         do {
             let page = try await session.sessions()
