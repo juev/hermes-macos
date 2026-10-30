@@ -48,6 +48,13 @@ public struct DashboardError: Error, Sendable, Equatable {
     }
 }
 
+extension DashboardError: LocalizedError {
+    /// One sentence a person can read, for the paths that only have `localizedDescription`.
+    public var errorDescription: String? {
+        detail.isEmpty ? "The dashboard answered \(status)." : "\(detail) (HTTP \(status))"
+    }
+}
+
 /// The calls a client makes over REST, each of them in the contract:
 /// `../hermes/docs/protocol.md` §1 for the status, §3 for the tokens and the ticket.
 public struct DashboardClient: Sendable {

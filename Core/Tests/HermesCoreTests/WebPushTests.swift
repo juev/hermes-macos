@@ -4,7 +4,7 @@ import Testing
 
 /// A push made by the plugin's own encryptor (`server/hermes-push/webpush.py`, v0.1.2) with a fixed
 /// salt and server key, so the two implementations can be held against each other.
-private enum Vector {
+enum PushVector {
     static let p256dh = "BMu_PfX7npZiBrcvw0Y3ZfRoVXdt7AQceT6kwioXn0CSNQ6_6osZSwKRGWW1Rd7TZZDX0rWBU2xZgttktuh_8WU"
     static let auth = "AAECAwQFBgcICQoLDA0ODw"
     static let userPrivateDER = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgIf3bccMJi+jjqJGdVOXZPx17hvhnjh88P9kWDJCsIKKhRANCAATLvz31+56WYga3L8NGN2X0aFV3bewEHHk+pMIqF59AkjUOv+qLGUsCkRlltUXe02WQ19K1gVNsWYLbZLbof/Fl"
@@ -30,13 +30,13 @@ private enum Vector {
 struct WebPushTests {
     @Test("The body the plugin encrypted opens with the subscription's key")
     func decrypt() throws {
-        let plain = try WebPush.decrypt(Vector.data(Vector.body), keys: Vector.keys())
-        #expect(String(decoding: plain, as: UTF8.self) == Vector.plaintext)
+        let plain = try WebPush.decrypt(PushVector.data(PushVector.body), keys: PushVector.keys())
+        #expect(String(decoding: plain, as: UTF8.self) == PushVector.plaintext)
     }
 
     @Test("What the plugin sent reads as a finished turn")
     func message() throws {
-        let plain = try WebPush.decrypt(Vector.data(Vector.body), keys: Vector.keys())
+        let plain = try WebPush.decrypt(PushVector.data(PushVector.body), keys: PushVector.keys())
         let message = PushMessage(try JSONValue.decode(plain))
         #expect(message.type == "turn")
         #expect(message.sessionID == "local-abc")
@@ -50,11 +50,11 @@ struct WebPushTests {
         let foreign = try PushKeys()
         let keys = PushKeys(
             privateKeyDER: foreign.privateKeyDER,
-            publicKey: Vector.keys().publicKey,
-            authSecret: Vector.keys().authSecret
+            publicKey: PushVector.keys().publicKey,
+            authSecret: PushVector.keys().authSecret
         )
         do {
-            _ = try WebPush.decrypt(Vector.data(Vector.body), keys: keys)
+            _ = try WebPush.decrypt(PushVector.data(PushVector.body), keys: keys)
             Issue.record("A foreign key opened the body")
         } catch let error as WebPushError {
             #expect(error == .cannotOpen || error == .badServerKey)
@@ -66,7 +66,7 @@ struct WebPushTests {
     @Test("A truncated body is refused before any key is used")
     func short() {
         do {
-            _ = try WebPush.decrypt(Data([1, 2, 3]), keys: Vector.keys())
+            _ = try WebPush.decrypt(Data([1, 2, 3]), keys: PushVector.keys())
             Issue.record("A short body was accepted")
         } catch let error as WebPushError {
             #expect(error == .malformedBody)
