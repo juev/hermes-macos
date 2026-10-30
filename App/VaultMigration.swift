@@ -8,7 +8,11 @@ import HermesCore
 /// Runs once, on the first launch that finds the vault empty, and drops the old items behind it.
 enum VaultMigration {
     static func runIfNeeded(vault: KeychainVault) {
-        guard vault.servers.isEmpty, vault.push().isEmpty else { return }
+        guard vault.servers.isEmpty, vault.push().isEmpty else {
+            Log.app.info("secrets: the vault is there, nothing to move")
+            return
+        }
+        Log.app.info("secrets: moving the old keychain items into the vault")
 
         let bookmarks = ServerBookmarks()
         let legacy = KeychainTokenStorage()

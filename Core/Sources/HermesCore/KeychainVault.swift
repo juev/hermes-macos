@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Security
 
 /// Everything this app keeps in the Keychain, in one item.
@@ -7,6 +8,12 @@ import Security
 /// three times. The tokens of every dashboard and the secrets of the push are a small dictionary, so
 /// they live under one account and one password — asked for once, however many of them are used.
 public final class KeychainVault: @unchecked Sendable {
+    nonisolated(unsafe) private static var reads = 0
+
+    static func logRead(_ account: String) {
+        reads += 1
+        Logger().info("keychain read \(reads, privacy: .public) for account \(account, privacy: .public)")
+    }
     /// What the push needs to exist between launches.
     public struct PushSecrets: Codable, Sendable, Equatable {
         public var keys: PushKeys?
@@ -100,6 +107,9 @@ public final class KeychainVault: @unchecked Sendable {
 
     private func contents() -> Contents? {
         if let loaded { return loaded }
+        // Counted out loud: with ad-hoc signing macOS asks again for every access, so the number of
+        // asks a launch makes is the number of reads, and the log is where that can be seen.
+        KeychainVault.logRead(account)
         var query = baseQuery()
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
