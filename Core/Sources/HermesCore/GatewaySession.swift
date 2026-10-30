@@ -21,8 +21,8 @@ public actor GatewaySession {
     private let transport: any SocketTransport
     private let firstPause: Duration
     private let maxPause: Duration
-    private let onEvent: (@Sendable (GatewayEvent) -> Void)?
-    private let onRequest: (@Sendable (ServerRequest) -> Void)?
+    private var onEvent: (@Sendable (GatewayEvent) -> Void)?
+    private var onRequest: (@Sendable (ServerRequest) -> Void)?
     private let onState: (@Sendable (State) -> Void)?
 
     private var loop: Task<Void, Never>?
@@ -51,6 +51,16 @@ public actor GatewaySession {
     }
 
     public func currentState() -> State { state }
+
+    /// Who hears about the events and the questions of the gateway. The chat takes them once it has
+    /// joined a session; until then nothing is listening.
+    public func setHandlers(
+        onEvent: (@Sendable (GatewayEvent) -> Void)?,
+        onRequest: (@Sendable (ServerRequest) -> Void)? = nil
+    ) {
+        self.onEvent = onEvent
+        self.onRequest = onRequest
+    }
 
     /// Keeps a socket open until `stop`. Safe to call twice.
     public func start() {
@@ -99,8 +109,14 @@ public actor GatewaySession {
                 let connection = GatewayConnection(
                     url: endpoint.socketURL(ticket: ticket),
                     transport: transport,
-                    onEvent: onEvent,
-                    onRequest: onRequest
+                    onEvent: { [weak self] event in
+                        guard let self else { return }
+                        Task { await self.handle(event) }
+                    },
+                    onRequest: { [weak self] request in
+                        guard let self else { return }
+                        Task { await self.handle(request) }
+                    }
                 )
                 self.connection = connection
                 try await connection.start()
@@ -138,6 +154,14 @@ public actor GatewaySession {
             pause = min(pause * 2, maxPause)
         }
         setState(.stopped)
+    }
+
+    private func handle(_ event: GatewayEvent) {
+        onEvent?(event)
+    }
+
+    private func handle(_ request: ServerRequest) {
+        onRequest?(request)
     }
 
     private func setState(_ next: State) {

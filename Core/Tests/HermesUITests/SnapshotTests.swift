@@ -139,6 +139,22 @@ struct SnapshotTests {
         #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("search.png").path))
     }
 
+    @Test("The composer")
+    func composer() throws {
+        let composer = VStack(spacing: 0) {
+            ComposerChrome(text: "Посмотри, почему падает сборка после обновления Xcode")
+            ComposerChrome(text: "", isRunning: true)
+        }
+        .frame(width: 820, alignment: .leading)
+        .background(Color(nsColor: .textBackgroundColor))
+        .environment(\.colorScheme, .light)
+
+        let renderer = ImageRenderer(content: composer)
+        renderer.scale = 2
+        try write(renderer.nsImage, to: "composer.png")
+        #expect(FileManager.default.fileExists(atPath: Self.output.appendingPathComponent("composer.png").path))
+    }
+
     @Test("A row of the chat list")
     func sessions() throws {
         let list = VStack(alignment: .leading, spacing: 0) {

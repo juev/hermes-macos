@@ -26,7 +26,7 @@ final class ConnectionModel {
     /// True when the address is on the tailnet and this Mac has no tailnet route.
     private(set) var needsTailscale = false
     private var task: Task<Void, Never>?
-    private var gatewaySession: GatewaySession?
+    private(set) var gatewaySession: GatewaySession?
     private(set) var dashboardSession: DashboardSession?
 
     var endpoint: Endpoint? { Endpoint(address: address) }

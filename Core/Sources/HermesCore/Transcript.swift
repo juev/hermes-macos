@@ -9,8 +9,14 @@ public struct ToolRun: Sendable, Equatable, Identifiable {
     public let arguments: String
     public var output: String?
     public var done: Bool
+    /// How long the call took, when the dashboard says.
+    public var durationSeconds: Double?
+    /// The dashboard's own one-line account, like "Did 3 searches in 2s".
+    public var summary: String?
 
-    public init(id: String, name: String, context: String = "", arguments: String = "", output: String? = nil, done: Bool = true) {
+    public init(id: String, name: String, context: String = "", arguments: String = "", output: String? = nil, done: Bool = true, durationSeconds: Double? = nil, summary: String? = nil) {
+        self.durationSeconds = durationSeconds
+        self.summary = summary
         self.id = id
         self.name = name
         self.context = context
@@ -46,10 +52,17 @@ public struct UserBubble: Sendable, Equatable {
 public struct AssistantTurn: Sendable, Equatable {
     public let key: String
     public var parts: [Part]
+    /// True while the turn streams; `message.complete` closes it.
+    public var streaming: Bool
+    public var error: String?
+    public var interrupted: Bool
 
-    public init(key: String, parts: [Part]) {
+    public init(key: String, parts: [Part], streaming: Bool = false, error: String? = nil, interrupted: Bool = false) {
         self.key = key
         self.parts = parts
+        self.streaming = streaming
+        self.error = error
+        self.interrupted = interrupted
     }
 
     /// The answer without tools and reasoning: what copying and reading aloud take.

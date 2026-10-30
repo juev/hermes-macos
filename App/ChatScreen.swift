@@ -7,8 +7,8 @@ struct ChatScreen: View {
     @State private var model: ChatModel
     @State private var selection: SessionSummary.ID?
 
-    init(session: DashboardSession) {
-        _model = State(initialValue: ChatModel(session: session))
+    init(session: DashboardSession, gateway: GatewaySession) {
+        _model = State(initialValue: ChatModel(session: session, gateway: gateway))
     }
 
     var body: some View {
@@ -108,7 +108,15 @@ struct ChatScreen: View {
             if model.items.isEmpty {
                 ContentUnavailableView("Nothing here yet", systemImage: "bubble.left", description: Text("This chat has no stored messages."))
             } else {
-                TranscriptView(items: model.items)
+                VStack(spacing: 0) {
+                    TranscriptView(items: model.items)
+                    ComposerView(
+                        text: Binding(get: { model.draft }, set: { model.draft = $0 }),
+                        isRunning: model.running,
+                        onSend: { Task { await model.send() } },
+                        onStop: { Task { await model.stop() } }
+                    )
+                }
             }
         }
     }
