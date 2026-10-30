@@ -692,6 +692,9 @@ final class ChatModel {
         }
     }
 
+    /// The address of the dashboard this window works with.
+    var serverAddress: String { server }
+
     private var server: String { session.endpoint.base.absoluteString }
 
     private func administrator() -> ChatAdmin {

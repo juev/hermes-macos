@@ -6,7 +6,7 @@ import SwiftUI
 struct ChatScreen: View {
     @State private var model: ChatModel
     @State private var selection: SessionSummary.ID?
-    @State private var showingPush = false
+    @State private var showingSettings = false
     @State private var renaming: SessionSummary?
     @State private var newTitle = ""
     @State private var deleting: SessionSummary?
@@ -60,8 +60,12 @@ struct ChatScreen: View {
         .onChange(of: model.selection) { _, id in
             if selection != id { selection = id }
         }
-        .sheet(isPresented: $showingPush) {
-            PushSettingsView(model: model.push)
+        .sheet(isPresented: $showingSettings) {
+            SettingsView(
+                push: model.push,
+                address: model.serverAddress,
+                onChangeServer: onDisconnect
+            )
         }
         .sheet(item: $renaming) { session in
             RenameChatSheet(title: newTitle) { title in
@@ -108,19 +112,12 @@ struct ChatScreen: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showingPush = true
+                    showingSettings = true
                 } label: {
-                    Label("Push", systemImage: "bell")
+                    Label("Settings", systemImage: "gearshape")
                 }
-                .help("Push from the dashboard when a turn ends anywhere")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    onDisconnect()
-                } label: {
-                    Label("Change server", systemImage: "rectangle.portrait.and.arrow.right")
-                }
-                .help("Close this dashboard and go back to the address")
+                .keyboardShortcut(",", modifiers: .command)
+                .help("Server and notifications (⌘,)")
             }
         }
     }

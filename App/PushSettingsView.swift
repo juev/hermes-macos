@@ -1,21 +1,17 @@
 import HermesCore
 import SwiftUI
 
-/// The settings of the push: which ntfy topic carries it and who may read that topic.
-struct PushSettingsView: View {
+/// The settings of the push: which ntfy topic carries it and who may read that topic. A part of the
+/// settings window, not a window of its own.
+struct PushSettingsForm: View {
     @Bindable var model: PushModel
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Push")
-                    .font(.system(size: 17, weight: .semibold))
-                Text("Hermes pushes to this Mac through hermes-push when a turn ends anywhere — a chat, Telegram, Matrix, a cron run. It needs an ntfy topic this Mac may read.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("Hermes pushes to this Mac through hermes-push when a turn ends anywhere — a chat, Telegram, Matrix, a cron run. It needs an ntfy topic this Mac may read.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 10) {
                 field("ntfy server", text: $model.server, prompt: "https://ntfy.evsyukov.org")
@@ -46,19 +42,14 @@ struct PushSettingsView: View {
                 if model.isEnabled {
                     Button("Turn off") { Task { await model.disable() } }
                 }
-
-                Spacer()
-
-                Button("Done") { dismiss() }
-                    .keyboardShortcut(.defaultAction)
             }
 
             Text("A test push goes to every subscriber, the phone included.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+
+            Spacer(minLength: 0)
         }
-        .padding(24)
-        .frame(width: 520)
     }
 
     private func field(_ label: String, text: Binding<String>, prompt: String) -> some View {

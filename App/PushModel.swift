@@ -39,7 +39,10 @@ final class PushModel {
         self.device = store.device
         self.user = ""
         self.password = ""
-        if case .basic(let name, let secret)? = store.loadCredentials()?.kind {
+        // Only when push is on: a Keychain item costs the person a password to open, and one for a
+        // feature that is off is a password for nothing.
+        if UserDefaults.standard.bool(forKey: Self.enabledKey),
+           case .basic(let name, let secret)? = store.loadCredentials()?.kind {
             self.user = name
             self.password = secret
         }

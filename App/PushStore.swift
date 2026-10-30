@@ -4,6 +4,7 @@ import Security
 
 /// Where the push settings live: the ntfy address and topic beside the app's own defaults, the keys
 /// and the password in the Keychain, because they are secrets and outlive a launch.
+@MainActor
 struct PushStore {
     private let defaults: UserDefaults
     private static let serverKey = "org.evsyukov.hermes.macos.push.server"
@@ -33,25 +34,38 @@ struct PushStore {
     }
 
     func loadKeys() -> PushKeys? {
+        if let cached = PushStore.keysCache { return cached }
         guard let data = Keychain.read(account: "push-keys") else { return nil }
-        return try? JSONDecoder().decode(PushKeys.self, from: data)
+        let keys = try? JSONDecoder().decode(PushKeys.self, from: data)
+        PushStore.keysCache = keys
+        return keys
     }
+
+    /// The Keychain asks the person once per item per launch, so an item read is kept for the launch.
+    @MainActor private static var keysCache: PushKeys?
+    @MainActor private static var credentialsCache: NtfyCredentials?
 
     func saveKeys(_ keys: PushKeys) throws {
         try Keychain.write(try JSONEncoder().encode(keys), account: "push-keys")
     }
 
     func loadCredentials() -> NtfyCredentials? {
+        if let cached = PushStore.credentialsCache { return cached }
         guard let data = Keychain.read(account: "push-credentials"),
               let values = try? JSONDecoder().decode([String: String].self, from: data) else { return nil }
         if let token = values["token"], !token.isEmpty {
-            return NtfyCredentials(kind: .token(token))
+            let credentials = NtfyCredentials(kind: .token(token))
+            PushStore.credentialsCache = credentials
+            return credentials
         }
         guard let user = values["user"], let password = values["password"], !user.isEmpty else { return nil }
-        return NtfyCredentials(kind: .basic(user: user, password: password))
+        let credentials = NtfyCredentials(kind: .basic(user: user, password: password))
+        PushStore.credentialsCache = credentials
+        return credentials
     }
 
     func saveCredentials(user: String, password: String) throws {
+        PushStore.credentialsCache = nil
         let values = ["user": user, "password": password]
         try Keychain.write(try JSONEncoder().encode(values), account: "push-credentials")
     }
