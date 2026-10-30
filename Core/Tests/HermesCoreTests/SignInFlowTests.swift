@@ -20,7 +20,7 @@ final class FakeReceiver: CallbackReceiver, @unchecked Sendable {
 }
 
 /// Keeps what the "browser" was opened on; a box because the closure that opens it is @Sendable.
-final class Recorder: @unchecked Sendable {
+final class URLCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var kept: URL?
 
@@ -55,7 +55,7 @@ struct SignInFlowTests {
     func happyPath() async throws {
         let transport = StubTransport([tokenAnswer])
         let receiver = FakeReceiver()
-        let opened = Recorder()
+        let opened = URLCapture()
 
         let tokens = try await flow(transport).signIn(
             receiver: receiver,
@@ -86,7 +86,7 @@ struct SignInFlowTests {
     func provider() async throws {
         let transport = StubTransport([tokenAnswer])
         let receiver = FakeReceiver()
-        let opened = Recorder()
+        let opened = URLCapture()
         _ = try await flow(transport).signIn(
             provider: "self-hosted",
             receiver: receiver,

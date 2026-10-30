@@ -1,0 +1,61 @@
+import Foundation
+
+/// One open socket of the gateway.
+public protocol SocketConnection: Sendable {
+    func send(_ text: String) async throws
+    /// The next text frame; nil once the other side closed the socket.
+    func next() async throws -> String?
+    func close()
+}
+
+public protocol SocketTransport: Sendable {
+    func connect(to url: URL) async throws -> any SocketConnection
+}
+
+/// `URLSession` opening the socket. No cache, no cookies: the dashboard's sign-in travels as the
+/// one-time ticket in the address, not as a session cookie.
+public final class URLSessionSocketTransport: SocketTransport, @unchecked Sendable {
+    private let session: URLSession
+
+    public init(timeout: TimeInterval = 30) {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = timeout
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        session = URLSession(configuration: configuration)
+    }
+
+    public func connect(to url: URL) async throws -> any SocketConnection {
+        let task = session.webSocketTask(with: url)
+        task.resume()
+        return URLSessionSocketConnection(task: task)
+    }
+}
+
+final class URLSessionSocketConnection: SocketConnection, @unchecked Sendable {
+    private let task: URLSessionWebSocketTask
+
+    init(task: URLSessionWebSocketTask) {
+        self.task = task
+    }
+
+    func send(_ text: String) async throws {
+        try await task.send(.string(text))
+    }
+
+    func next() async throws -> String? {
+        do {
+            switch try await task.receive() {
+            case .string(let text): return text
+            case .data(let data): return String(decoding: data, as: UTF8.self)
+            @unknown default: return nil
+            }
+        } catch let error as URLError where error.code == .cancelled {
+            return nil
+        }
+    }
+
+    func close() {
+        task.cancel(with: .normalClosure, reason: nil)
+    }
+}
