@@ -238,11 +238,22 @@ struct ChatScreen: View {
                 Text("Reading the models…")
             }
         } label: {
-            Label(model.currentModel ?? "Model", systemImage: "cpu")
+            HStack(spacing: 4) {
+                Image(systemName: "cpu")
+                Text(shortModel)
+                    .font(.system(size: 11))
+            }
         }
         .disabled(!model.hasOpenChat || model.changingModel)
         .help("Choose the model this chat answers on")
         .task { await model.loadModels() }
+    }
+
+    /// The model on the button: short enough for a toolbar, exact enough to read.
+    private var shortModel: String {
+        guard let model = model.currentModel else { return "Model" }
+        guard let last = model.split(separator: "/").last else { return model }
+        return String(last)
     }
 
     private var title: String {
@@ -257,7 +268,9 @@ struct ChatScreen: View {
         VStack(spacing: 0) {
             header
             detailBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     @ViewBuilder
@@ -319,7 +332,8 @@ struct ChatScreen: View {
 
     private func subtitle(for session: SessionSummary) -> String {
         var parts: [String] = []
-        if let model = session.model { parts.append(model) }
+        // The model in use now: a switch changes it before the list is read again.
+        if let model = model.currentModel ?? session.model { parts.append(model) }
         if !session.source.isEmpty { parts.append(session.source) }
         if session.messageCount > 0 { parts.append("\(session.messageCount) messages") }
         if let usage = session.usage {

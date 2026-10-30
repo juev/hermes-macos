@@ -99,7 +99,7 @@ final class ChatModel {
         await push.restoreIfEnabled()
 
         // What the last launch read, painted at once; the dashboard's answer replaces it when it comes.
-        if sessions.isEmpty, let cached = await cache.read(ChatCache.sessionsName(server: server)) {
+        if sessions.isEmpty, let cached = cache.read(ChatCache.sessionsName(server: server)) {
             take(SessionPage(cached))
             if sessionsState != .ready { sessionsState = .ready }
         }
@@ -107,7 +107,7 @@ final class ChatModel {
 
         do {
             let payload = try await session.sessionsPayload(archived: showingArchive ? .only : .exclude)
-            await cache.write(payload, name: ChatCache.sessionsName(server: server))
+            cache.write(payload, name: ChatCache.sessionsName(server: server))
             take(SessionPage(payload))
             sessionsState = .ready
             if selection == nil, let first = sessions.first {
@@ -136,13 +136,31 @@ final class ChatModel {
     /// paints from disk instead of waiting.
     private func prefetch() {
         prefetchTask?.cancel()
-        let ids = sessions.prefix(12).map(\.id)
-        prefetchTask = Task { [session, cache] in
-            for id in ids {
-                if Task.isCancelled { return }
-                if await cache.read(ChatCache.transcriptName(chat: id), olderThan: 600) != nil { continue }
-                guard let payload = try? await session.messagesPayload(sessionID: id) else { continue }
-                await cache.write(payload, name: ChatCache.transcriptName(chat: id))
+        let ids = sessions.prefix(30).map(\.id)
+        let session = self.session
+        let cache = self.cache
+        prefetchTask = Task {
+            // A few at a time: enough to fill the list while the person reads, not enough to make the
+            // dashboard feel hammered.
+            await withTaskGroup(of: Void.self) { group in
+                var queue = ids[...]
+                for _ in 0..<4 {
+                    guard let id = queue.popFirst() else { break }
+                    group.addTask {
+                        if cache.read(ChatCache.transcriptName(chat: id), olderThan: 900) != nil { return }
+                        guard let payload = try? await session.messagesPayload(sessionID: id) else { return }
+                        cache.write(payload, name: ChatCache.transcriptName(chat: id))
+                    }
+                }
+                for await _ in group {
+                    if Task.isCancelled { return }
+                    guard let id = queue.popFirst() else { continue }
+                    group.addTask {
+                        if cache.read(ChatCache.transcriptName(chat: id), olderThan: 900) != nil { return }
+                        guard let payload = try? await session.messagesPayload(sessionID: id) else { return }
+                        cache.write(payload, name: ChatCache.transcriptName(chat: id))
+                    }
+                }
             }
         }
     }
@@ -154,27 +172,39 @@ final class ChatModel {
 
         selection = id
         selected = sessions.first { $0.id == id }
-        transcriptState = .loading
-        items = []
         status = nil
         sendError = nil
         question = nil
-
-        chat = nil
-        await release(previousChat, storedID: previousRunning ? previousID : nil, opening: id)
         running = false
+        chat = nil
 
-        // The history as it was last read, at once; the wire corrects it a moment later.
-        if let cached = await cache.read(ChatCache.transcriptName(chat: id)) {
+        // What was read last time, before anything is awaited: the chat is on screen in the same turn
+        // of the run loop as the click. The wire corrects it a moment later.
+        if let cached = cache.read(ChatCache.transcriptName(chat: id)) {
             items = Transcript.items(from: StoredMessage.page(cached))
             transcriptState = .ready
+            Log.app.debug("chat \(id.prefix(12), privacy: .public): painted from the cache, \(self.items.count) items")
+        } else {
+            items = []
+            transcriptState = .loading
+            Log.app.debug("chat \(id.prefix(12), privacy: .public): nothing cached")
+        }
+
+        // Letting go of the chat being left costs a round trip, and the chat being opened has no
+        // reason to wait for it.
+        if let previousChat {
+            Task {
+                await release(previousChat, storedID: previousRunning ? previousID : nil, opening: id)
+            }
         }
 
         do {
+            let started = Date()
             let payload = try await session.messagesPayload(sessionID: id)
-            await cache.write(payload, name: ChatCache.transcriptName(chat: id))
+            cache.write(payload, name: ChatCache.transcriptName(chat: id))
             items = Transcript.items(from: StoredMessage.page(payload))
             transcriptState = .ready
+            Log.app.debug("chat \(id.prefix(12), privacy: .public): read from the dashboard in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
         } catch {
             if items.isEmpty {
                 transcriptState = .failed(ErrorMessage.of(error))
