@@ -77,6 +77,11 @@ jobs:
       - name: Toolchain
         run: brew install xcodegen
 
+      # The proxy the sessions take, against real servers: plain HTTP, a CONNECT that carries TLS,
+      # and a name the node cannot reach. Runs without a node, so it needs no tailnet.
+      - name: The node's proxy
+        run: cd tailnet && go test ./...
+
       - name: The node, bound for macOS
         run: scripts/build-tailnet.sh
 

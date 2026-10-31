@@ -80,7 +80,7 @@ func Start(dir, controlURL, authKey, hostname string) (string, error) {
 	}
 	srv = s
 	proxy = ln
-	go serve(ln, s, logs)
+	go serve(ln, s.Dial, logs)
 	return ln.Addr().String(), nil
 }
 
