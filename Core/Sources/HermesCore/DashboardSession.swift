@@ -78,6 +78,10 @@ public actor DashboardSession: SessionCredentials {
         case all
     }
 
+    /// The sources a list of chats leaves out: one-shot CLI runs and the other programmatic callers.
+    /// Cron stays, a scheduled run is a row with its clock glyph; subagent runs the dashboard hides itself.
+    static let excludedSources = "oneshot,tool,api_server,acp,hermes_flow,vulcan_delegate,webhook"
+
     /// The chats the sidebar shows, newest activity first.
     public func sessions(limit: Int = 50, offset: Int = 0, archived: Archive = .exclude) async throws -> SessionPage {
         SessionPage(try await sessionsPayload(limit: limit, offset: offset, archived: archived))
@@ -91,7 +95,8 @@ public actor DashboardSession: SessionCredentials {
             URLQueryItem(name: "offset", value: String(offset)),
             URLQueryItem(name: "order", value: "recent"),
             URLQueryItem(name: "archived", value: archived.rawValue),
-            URLQueryItem(name: "min_messages", value: "1")
+            URLQueryItem(name: "min_messages", value: "1"),
+            URLQueryItem(name: "exclude_sources", value: Self.excludedSources)
         ], token: token)
     }
 
