@@ -43,8 +43,14 @@ public actor ChatSession {
     private let gateway: GatewaySession
     private let hub: ChatHub?
     private var liveID: String?
+    /// The chat the sidebar knows, which the live session is joined from: a reconnect joins it again
+    /// by this id, because the live one may be gone with the connection.
+    private var storedID: String?
     private var sink: (@Sendable (GatewayEvent) -> Void)?
     private var questions: (@Sendable (AgentQuestion) -> Void)?
+    /// Questions that arrived before the window attached its sink — the join hands them back, and a
+    /// chat that offered them to nobody would leave the agent waiting on an approval nobody saw.
+    private var held: [AgentQuestion] = []
     private var pending: [String: ServerRequest] = [:]
 
     /// A chat whose events come straight from the session, for one chat at a time.
@@ -65,9 +71,15 @@ public actor ChatSession {
     }
 
     /// Who hears the questions of this chat: an approval, a choice, a secret. A question this client
-    /// does not answer is refused at once, so the agent does not wait for it.
+    /// does not answer is refused at once, so the agent does not wait for it. A question that came
+    /// before there was a sink — the join hands back the ones the connection gap swallowed — is
+    /// offered at once rather than waiting in the gateway.
     public func setQuestionSink(_ sink: (@Sendable (AgentQuestion) -> Void)?) {
-        self.questions = sink
+        questions = sink
+        guard let sink, !held.isEmpty else { return }
+        let waiting = held
+        held.removeAll()
+        for question in waiting { sink(question) }
     }
 
     /// Answers a question the gateway asked. The request is kept until it is answered.
@@ -95,8 +107,19 @@ public actor ChatSession {
         guard let live = answer["session_id"]?.scalarString, !live.isEmpty else {
             throw ChatError.noLiveSession
         }
+        self.storedID = storedID
         liveID = live
         await listen()
+
+        // A question still waiting is not an event: the gateway hands back the ones the connection
+        // gap swallowed with the join, so an agent parked on an approval is answered rather than
+        // timed out.
+        for entry in answer["open_requests"]?.arrayValue ?? [] {
+            guard case .object(let request) = entry,
+                  let id = request["id"]?.scalarString,
+                  let method = request["method"]?.stringValue else { continue }
+            receive(ServerRequest(id: id, method: method, params: request["params"]?.objectValue ?? [:]))
+        }
 
         let info = answer["info"]
         return Joined(
@@ -106,6 +129,15 @@ public actor ChatSession {
             model: info?["model"]?.stringValue ?? answer["model"]?.stringValue,
             streamed: answer["inflight"]?["assistant"]?.stringValue ?? ""
         )
+    }
+
+    /// Joins the chat again after the socket came back. The live id of the old connection may be gone
+    /// — a dashboard that restarted mints a new one — so the stored chat is asked for a live session
+    /// again, and the answer carries the questions still waiting on it.
+    @discardableResult
+    public func rejoin() async throws -> Joined? {
+        guard let storedID else { return nil }
+        return try await join(storedID: storedID)
     }
 
     /// Attaches a file to the next turn. A picture goes to the vision queue of that turn and needs no
@@ -243,6 +275,12 @@ public actor ChatSession {
             return
         }
         pending[question.id] = request
-        questions?(question)
+        guard let questions else {
+            // No sink yet: the join answers before the window wires the chat up, and a question handed
+            // to nobody would leave the agent waiting on an approval no window shows.
+            held.append(question)
+            return
+        }
+        questions(question)
     }
 }

@@ -10,6 +10,10 @@ public actor ChatHub {
     private let gateway: GatewaySession
     private var chats: [String: ChatSession] = [:]
     private var listening = false
+    /// The connection the chats of this hub are joined on: a later one means they may have missed
+    /// events and have to join again.
+    private var joinedGeneration = 0
+    private var onConnection: (@Sendable () -> Void)?
 
     public init(gateway: GatewaySession) {
         self.gateway = gateway
@@ -18,8 +22,15 @@ public actor ChatHub {
     /// How many chats are registered: the one on screen and the ones left running.
     public var joinedChats: Int { chats.count }
 
+    /// Who hears that the socket came back: the window reads its chat again and joins it anew.
+    public func setConnectionHandler(_ handler: (@Sendable () -> Void)?) {
+        onConnection = handler
+    }
+
     func register(_ chat: ChatSession, liveID: String) async {
         chats[liveID] = chat
+        // The connection this chat just joined is not news to it; only a later one is.
+        joinedGeneration = max(joinedGeneration, await gateway.currentGeneration())
         guard !listening else { return }
         listening = true
         await gateway.setHandlers(
@@ -32,10 +43,20 @@ public actor ChatHub {
                 Task { await self.dispatch(request) }
             }
         )
+        await gateway.setConnectionHandler { [weak self] generation in
+            guard let self else { return }
+            Task { await self.connectionCame(generation) }
+        }
     }
 
     func unregister(liveID: String) {
         chats[liveID] = nil
+    }
+
+    private func connectionCame(_ generation: Int) {
+        guard generation > joinedGeneration else { return }
+        joinedGeneration = generation
+        onConnection?()
     }
 
     private func dispatch(_ event: GatewayEvent) async {

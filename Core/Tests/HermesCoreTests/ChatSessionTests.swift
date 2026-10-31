@@ -146,6 +146,65 @@ struct ChatSessionTests {
         }
         await gateway.stop()
     }
+
+    @Test("A question the join hands back reaches the window")
+    func questionFromJoin() async throws {
+        let socket = FakeSocket()
+        socket.push(readyFrame())
+        let gateway = await connected(ScriptedTransport([.socket(socket)]))
+        let chat = ChatSession(gateway: gateway)
+
+        // The window wires its sink after the join, so an approval asked during a gap has nobody to
+        // go to when the answer arrives: it waits in the chat instead of being lost.
+        let asked = Recorder<AgentQuestion>()
+        let approval: JSONValue = [
+            "id": "srv-9",
+            "method": "approval",
+            "params": ["session_id": "live-1", "command": "rm -rf build", "choices": ["once", "deny"]]
+        ]
+        async let joined = chat.join(storedID: "stored-1")
+        try await answer(socket, for: "session.resume", result: [
+            "session_id": "live-1",
+            "open_requests": [approval]
+        ])
+        _ = try await joined
+
+        await chat.setQuestionSink { asked.record($0) }
+        try await waitUntil { asked.all.count == 1 }
+        #expect(asked.all.first?.id == "srv-9")
+        await gateway.stop()
+    }
+
+    @Test("A chat joins its session again after the socket came back")
+    func rejoin() async throws {
+        let first = FakeSocket()
+        first.push(readyFrame())
+        let second = FakeSocket()
+        second.push(readyFrame())
+        let transport = ScriptedTransport([.socket(first), .socket(second)])
+        let gateway = await connected(transport)
+        let chat = ChatSession(gateway: gateway)
+
+        async let joined = chat.join(storedID: "stored-1")
+        try await answer(first, for: "session.resume", result: ["session_id": "live-1"])
+        _ = try await joined
+
+        // The socket drops. The live session survives it, but the window stopped hearing the turn.
+        first.finish()
+        try await waitUntil { transport.sockets.count == 2 }
+        try await waitUntil { await gateway.currentState() == .ready }
+
+        async let rejoining = chat.rejoin()
+        try await answer(second, for: "session.resume", result: ["session_id": "live-1", "running": 1, "inflight": ["assistant": "half an ans"]])
+        let again = try await rejoining
+
+        #expect(again?.liveID == "live-1")
+        #expect(again?.running == true)
+        #expect(again?.streamed == "half an ans")
+        let resume = try #require(second.sentFrames.last { $0["method"]?.stringValue == "session.resume" })
+        #expect(resume["params"]?["session_id"]?.stringValue == "stored-1")
+        await gateway.stop()
+    }
 }
 
 extension JSONValue {

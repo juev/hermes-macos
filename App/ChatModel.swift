@@ -108,6 +108,46 @@ final class ChatModel {
             }
             TurnNotifier.shared.pushArrived(push, aboutTheOpenChat: push.sessionID == self.selection)
         }
+        // The socket comes back after a drop: what the window missed is not among the events it saw,
+        // so the chat is read again and joined again instead of drawing into a transcript with a hole.
+        Task { [hub] in
+            await hub.setConnectionHandler { [weak self] in
+                Task { @MainActor in await self?.socketCameBack() }
+            }
+        }
+    }
+
+    /// The socket came back. The live session the window was joined to may have gone with the
+    /// connection — a dashboard that restarted mints a new one — and the part of the answer that
+    /// streamed while nothing was listening is in the history, not in the events this window saw.
+    private func socketCameBack() async {
+        // A chat left while its turn runs joins again too: its banner is the one thing a turn that
+        // ends in the background produces.
+        let watching = watched
+        for (storedID, chat) in watching {
+            guard let joined = try? await chat.rejoin() else { continue }
+            if joined?.running != true {
+                watched[storedID] = nil
+                await chat.leave()
+            }
+        }
+
+        guard let selection, !isDraft, let chat else { return }
+        let wasRunning = running
+        if let payload = try? await session.messagesPayload(sessionID: selection) {
+            cache.write(payload, name: ChatCache.transcriptName(chat: selection))
+            items = Transcript.items(from: StoredMessage.page(payload))
+            transcriptState = .ready
+        }
+        guard let joined = try? await chat.rejoin() else { return }
+        running = joined.running
+        if joined.running {
+            items = LiveTurn.resume(items, streamed: joined.streamed)
+        } else if wasRunning {
+            // The turn ended while nothing was listening: the history read is its answer, and a turn
+            // still open on screen is closed rather than left streaming for good.
+            items = LiveTurn.close(items, interrupted: false)
+        }
     }
 
     /// What the person is writing.
