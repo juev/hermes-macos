@@ -48,6 +48,8 @@ struct ConnectView: View {
             hint
                 .frame(height: 34, alignment: .topLeading)
 
+            tailnetRoute
+
             HStack(spacing: 12) {
                 Button(model.isBusy ? "Connecting…" : "Connect") { model.connect() }
                     .keyboardShortcut(.defaultAction)
@@ -82,11 +84,6 @@ struct ConnectView: View {
                     Text("That is not an address.")
                         .font(.caption)
                         .foregroundStyle(.red)
-                }
-                if model.tailnet.isEnabled {
-                    Text("Through the built-in tailnet — \(model.tailnet.controlServerText).")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
             }
         case .checking:
@@ -141,6 +138,72 @@ struct ConnectView: View {
                         .font(.caption)
                 }
             }
+        }
+    }
+
+    /// The route onto a tailnet this app joins itself. It belongs on this screen rather than behind
+    /// Settings: the dashboard that needs it is the one that would open the window Settings lives in.
+    private var tailnetRoute: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Divider()
+                .frame(maxWidth: 380)
+                .padding(.vertical, 2)
+            Toggle("Reach the dashboard through the built-in tailnet", isOn: Binding(
+                get: { model.tailnet.isEnabled },
+                set: { model.tailnet.setEnabled($0) }
+            ))
+            .toggleStyle(.checkbox)
+            .font(.caption)
+            .disabled(model.isBusy || (!model.tailnet.isAvailable && !model.tailnet.isEnabled))
+
+            if model.tailnet.isEnabled {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("control server — a Headscale instance, or empty for Tailscale")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    TextField("https://headscale.example.org", text: Binding(
+                        get: { model.tailnet.settings.controlURL },
+                        set: { model.tailnet.setControlURL($0) }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(maxWidth: 380)
+                    .disabled(model.isBusy)
+                }
+                tailnetState
+            }
+
+            if !model.tailnet.isAvailable {
+                Text("This build carries no tailnet node: Settings → Tailnet says how to build one.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    /// Where the node stands, and the one button that moves it along.
+    private var tailnetState: some View {
+        HStack(spacing: 10) {
+            Text(model.tailnet.status.summary)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if case .needsLogin = model.tailnet.phase {
+                Button("Open the sign-in page") { model.tailnet.openLoginPage() }
+                    .buttonStyle(.link)
+                    .font(.caption2)
+            }
+            if model.tailnet.isRunning {
+                Button("Leave") { model.tailnet.leave() }
+                    .buttonStyle(.link)
+                    .font(.caption2)
+            } else {
+                Button("Join now") { Task { try? await model.tailnet.bringUp() } }
+                    .buttonStyle(.link)
+                    .font(.caption2)
+                    .disabled(model.isBusy || !model.tailnet.isAvailable)
+            }
+            Spacer(minLength: 0)
         }
     }
 
