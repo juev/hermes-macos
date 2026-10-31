@@ -9,6 +9,8 @@ final class ConnectionModel {
     enum Phase: Equatable {
         case idle
         case checking
+        /// The app's own node is joining the tailnet before the dashboard is asked anything.
+        case joiningTailnet
         case waitingForBrowser
         case connected(ServerStatus)
         case failed(String)
@@ -29,6 +31,8 @@ final class ConnectionModel {
     private(set) var gateway: GatewaySession.State = .idle
     /// True when the address is on the tailnet and this Mac has no tailnet route.
     private(set) var needsTailscale = false
+    /// The tailnet this app can join itself, which replaces the Tailscale app for this dashboard.
+    let tailnet = TailnetModel()
     private var task: Task<Void, Never>?
     private let bookmarks = ServerBookmarks()
     private(set) var gatewaySession: GatewaySession?
@@ -38,7 +42,7 @@ final class ConnectionModel {
 
     var endpoint: Endpoint? { Endpoint(address: address) }
 
-    var isBusy: Bool { phase == .checking || phase == .waitingForBrowser }
+    var isBusy: Bool { phase == .checking || phase == .joiningTailnet || phase == .waitingForBrowser }
 
     var canConnect: Bool { endpoint != nil && !isBusy }
 
@@ -61,10 +65,12 @@ final class ConnectionModel {
         await connect(to: endpoint, allowingSignIn: false)
     }
 
-    /// Lets the dashboard go: the window goes back to the address, the tokens stay in the Keychain.
+    /// Lets the dashboard go: the window goes back to the address, the tokens stay in the Keychain,
+    /// and a tailnet this app joined is left with it.
     func disconnect() {
         task?.cancel()
         stopSocket()
+        tailnet.leave()
         phase = .idle
         gateway = .idle
     }
@@ -88,12 +94,13 @@ final class ConnectionModel {
         }
     }
 
-    private func openSocket(endpoint: Endpoint, session dashboard: DashboardSession) async throws {
+    private func openSocket(endpoint: Endpoint, session dashboard: DashboardSession, transport: any SocketTransport) async throws {
         dashboardSession = dashboard
 
         let session = GatewaySession(
             endpoint: endpoint,
             credentials: dashboard,
+            transport: transport,
             onState: { [weak self] state in
                 Log.app.notice("socket \(String(describing: state), privacy: .public)")
                 Task { @MainActor in self?.gateway = state }
@@ -132,34 +139,58 @@ final class ConnectionModel {
         gateway = .idle
         stopSocket()
 
-        // A dashboard published only on the tailnet has no route while Tailscale is off, and a
-        // request would hang for its whole timeout. Say that at once instead.
-        let host = endpoint.base.host
-        let refusal = await Task.detached { () -> ConnectRefusal? in
-            guard let host else { return nil }
-            return ConnectPreflight.refusal(
-                host: host,
-                addresses: Tailnet.resolvedAddresses(of: host),
-                tailnetUp: Tailnet.isUp()
-            )
-        }.value
-        if let refusal {
-            needsTailscale = true
-            phase = .failed(refusal.message)
-            return
+        // A dashboard that only the tailnet reaches is reached by the node this app carries, which
+        // joins the control server — Headscale, or Tailscale — before the dashboard is asked
+        // anything. Without the route, the address is read first: a request to a tailnet address
+        // that has no route would hang for its whole timeout.
+        var proxy: TailnetProxy?
+        if tailnet.isEnabled {
+            phase = .joiningTailnet
+            do {
+                proxy = try await tailnet.bringUp()
+            } catch is CancellationError {
+                phase = .idle
+                return
+            } catch {
+                Log.app.error("tailnet: \(ErrorMessage.of(error), privacy: .public)")
+                phase = .failed(ErrorMessage.of(error))
+                return
+            }
+        } else {
+            let host = endpoint.base.host
+            let refusal = await Task.detached { () -> ConnectRefusal? in
+                guard let host else { return nil }
+                return ConnectPreflight.refusal(
+                    host: host,
+                    addresses: Tailnet.resolvedAddresses(of: host),
+                    tailnetUp: Tailnet.isUp()
+                )
+            }.value
+            if let refusal {
+                needsTailscale = true
+                phase = .failed(refusal.message)
+                return
+            }
         }
 
-        let client = DashboardClient(endpoint: endpoint)
+        let http = URLSessionTransport(proxy: proxy)
+        let client = DashboardClient(endpoint: endpoint, transport: http)
         do {
             let status = try await client.status()
             // The Keychain may already hold tokens of this dashboard: use them instead of sending
             // the person through the browser again on every launch.
-            let session = DashboardSession(endpoint: endpoint, storage: VaultTokenStorage(vault: AppSecrets.vault))
+            let session = DashboardSession(endpoint: endpoint, transport: http, storage: VaultTokenStorage(vault: AppSecrets.vault))
             try? await session.load()
             if status.authRequired {
                 if try await needsBrowserSignIn(session) {
                     guard allowingSignIn else {
                         phase = .failed("The sign-in of this dashboard has run out. Connect again to sign in.")
+                        return
+                    }
+                    // A browser reaches the dashboard over the network this Mac is on, not through
+                    // the node: a sign-in page on a tailnet-only address would open and fail.
+                    if proxy != nil {
+                        phase = .failed("This dashboard asks the browser to sign in, and the browser does not go through the built-in tailnet. Turn the built-in tailnet off, connect once so the sign-in can run, then turn it back on: the tokens it keeps work through the node.")
                         return
                     }
                     phase = .waitingForBrowser
@@ -168,7 +199,11 @@ final class ConnectionModel {
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }
-            try await openSocket(endpoint: endpoint, session: session)
+            try await openSocket(
+                endpoint: endpoint,
+                session: session,
+                transport: URLSessionSocketTransport(proxy: proxy)
+            )
             bookmarks.remember(endpoint.base.absoluteString)
             phase = .connected(status)
             Log.app.notice("connected to \(endpoint.base.absoluteString, privacy: .public) v\(status.version ?? "-", privacy: .public)")

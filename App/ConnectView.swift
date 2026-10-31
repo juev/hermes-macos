@@ -68,24 +68,45 @@ struct ConnectView: View {
     private var hint: some View {
         switch model.phase {
         case .idle:
-            if model.address.isEmpty {
-                Text("A bare host name gets https. A dashboard on the tailnet answers on its MagicDNS name.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else if let endpoint = model.endpoint {
-                Text(endpoint.base.absoluteString)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            } else {
-                Text("That is not an address.")
-                    .font(.caption)
-                    .foregroundStyle(.red)
+            VStack(alignment: .leading, spacing: 4) {
+                if model.address.isEmpty {
+                    Text("A bare host name gets https. A dashboard on the tailnet answers on its MagicDNS name.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let endpoint = model.endpoint {
+                    Text(endpoint.base.absoluteString)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                } else {
+                    Text("That is not an address.")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+                if model.tailnet.isEnabled {
+                    Text("Through the built-in tailnet — \(model.tailnet.controlServerText).")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
             }
         case .checking:
             Text("Asking the dashboard what it needs…")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        case .joiningTailnet:
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Joining the tailnet before asking the dashboard…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(model.tailnet.status.summary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                if case .needsLogin = model.tailnet.phase {
+                    Button("Open the sign-in page") { model.tailnet.openLoginPage() }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
+            }
         case .waitingForBrowser:
             Text("Finish signing in in your browser. The dashboard needs to confirm who you are.")
                 .font(.caption)
@@ -111,6 +132,11 @@ struct ConnectView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if model.needsTailscale {
                     Button("Open Tailscale") { model.openTailscale() }
+                        .buttonStyle(.link)
+                        .font(.caption)
+                }
+                if case .needsLogin = model.tailnet.phase {
+                    Button("Open the sign-in page") { model.tailnet.openLoginPage() }
                         .buttonStyle(.link)
                         .font(.caption)
                 }

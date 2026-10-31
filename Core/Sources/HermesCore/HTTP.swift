@@ -81,7 +81,7 @@ public protocol HTTPTransport: Sendable {
 public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
     private let session: URLSession
 
-    public init(timeout: TimeInterval = 30) {
+    public init(timeout: TimeInterval = 30, proxy: TailnetProxy? = nil) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout * 2
@@ -89,8 +89,14 @@ public final class URLSessionTransport: HTTPTransport, @unchecked Sendable {
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.waitsForConnectivity = false
+        // A dashboard the built-in tailnet reaches goes through the node's proxy; without one the
+        // session keeps the proxies of the system.
+        configuration.connectionProxyDictionary = proxy?.settings
         session = URLSession(configuration: configuration)
     }
+
+    /// The proxy this session sends its requests through, for a test that checks the wiring.
+    var proxySettings: [AnyHashable: Any]? { session.configuration.connectionProxyDictionary }
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         var urlRequest = URLRequest(url: request.url)

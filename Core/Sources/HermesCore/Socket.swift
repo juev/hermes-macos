@@ -17,13 +17,19 @@ public protocol SocketTransport: Sendable {
 public final class URLSessionSocketTransport: SocketTransport, @unchecked Sendable {
     private let session: URLSession
 
-    public init(timeout: TimeInterval = 30) {
+    public init(timeout: TimeInterval = 30, proxy: TailnetProxy? = nil) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
+        // The socket of a dashboard on the built-in tailnet is carried by the node's proxy too: a
+        // `wss` address goes over the same CONNECT the rest of the session uses.
+        configuration.connectionProxyDictionary = proxy?.settings
         session = URLSession(configuration: configuration)
     }
+
+    /// The proxy this session opens its sockets through, for a test that checks the wiring.
+    var proxySettings: [AnyHashable: Any]? { session.configuration.connectionProxyDictionary }
 
     public func connect(to url: URL) async throws -> any SocketConnection {
         let task = session.webSocketTask(with: url)

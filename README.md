@@ -30,10 +30,16 @@ dashboard's HTTP and its JSON-RPC socket.
 - **Notifications** — a banner when a turn ends out of sight, and `hermes-push` for turns that finish
   anywhere: Telegram, Matrix, a cron run. The dashboard posts an RFC 8291 Web Push body to an ntfy topic
   this Mac subscribes to with its own P-256 keys, and the app opens it itself.
-- **Tailscale** — a dashboard published only on the tailnet is told apart from one that is down: the
-  address family is read before a request is made, and the answer names Tailscale instead of waiting
-  out a timeout. MagicDNS names and `100.64.0.0/10` addresses both work.
-- **One settings window** — the dashboard's address and the notifications, behind one gear (⌘,).
+- **Tailscale and Headscale** — a dashboard published only on the tailnet is told apart from one that
+  is down: the address family is read before a request is made, and the answer names Tailscale instead
+  of waiting out a timeout. MagicDNS names and `100.64.0.0/10` addresses both work. The app can also
+  carry the node itself: a userspace Tailscale node — the one the Android client binds — joins
+  Tailscale or a **Headscale** instance before any request goes to the dashboard, so a Mac without the
+  Tailscale app opens a dashboard that only the tailnet reaches. It takes no VPN slot and leaves
+  another VPN running. Settings → Tailnet takes the control server (empty for Tailscale,
+  `https://scale.evsyukov.org` for a Headscale instance) and the name this Mac takes there.
+- **One settings window** — the dashboard's address, the tailnet and the notifications, behind one
+  gear (⌘,).
 
 ## Screenshots
 
@@ -55,6 +61,9 @@ dashboard (`HERMES_DOC_SCREENSHOTS=1 swift test --package-path Core --filter Doc
 
 - macOS 15 or later.
 - To build: Xcode 27 with the macOS 27 SDK, and XcodeGen (`brew install xcodegen`).
+- For the built-in tailnet: Go 1.27, and `scripts/build-tailnet.sh`, which binds the node in
+  `tailnet/` with gomobile. Without it the app builds and the tailnet route says the node is not in
+  the build, as the Android client does without `tailnet.aar`.
 
 ## Install
 
@@ -69,7 +78,8 @@ xattr -dr com.apple.quarantine /Applications/Hermes.app
 To build it yourself instead:
 
 ```sh
-scripts/build.sh        # build/Build/Products/Debug/Hermes.app
+scripts/build-tailnet.sh  # optional: Core/Artifacts/HermesTailnet.xcframework, needs Go
+scripts/build.sh          # build/Build/Products/Debug/Hermes.app
 ```
 
 ## Two clients, one server
@@ -90,7 +100,9 @@ not copied into this README.
   - `HermesUI` — the typography and the views: the transcript, the composer, the question card, the
     search results. SwiftUI only, so a test can draw it with `ImageRenderer`.
   - `hermes-live` — an executable that runs the client's own code against a live dashboard.
-- `App/` — the window: the connection, the chat model, notifications, the Keychain.
+- `App/` — the window: the connection, the chat model, notifications, the Keychain, the tailnet model.
+- `tailnet/` — the Go package of the built-in tailnet node: `tsnet` in the app, a local proxy for the
+  sessions, and the state the node reports. Bound into `Core/Artifacts/`, never committed.
 - `project.yml` — the XcodeGen description. `Hermes.xcodeproj` is generated from it and not committed.
 - `docs/signing.md` — the identity releases are signed with, and how to make another.
 
@@ -115,8 +127,11 @@ pictures above are rendered the same way from synthetic data.
 - Pinning is kept on this Mac, per dashboard, because a plain `hermes dashboard` has no call to store it.
 - Attachments arrive as `MEDIA:` lines; a row that carries `image_url` content parts has not been seen in
   the installation this was written against.
-- Managing Tailscale from inside the app — starting it, signing in, choosing an exit node — is not
-  there: the app works over the tailnet and says so when the tailnet is not reachable.
+- The built-in tailnet does not carry a browser. A dashboard that asks for a sign-in is signed in
+  once without the route, in the browser, and the tokens the Keychain keeps work through the node
+  afterwards; opening the sign-in page over the node itself is not there yet.
+- Choosing an exit node, and reading what the Tailscale app is doing, are not there: the app either
+  joins the tailnet itself or says that the tailnet is not reachable.
 
 ## License
 
