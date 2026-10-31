@@ -1,4 +1,6 @@
+import AppKit
 import HermesCore
+import HermesUI
 import SwiftUI
 
 /// One window for everything that is not a chat: the dashboard this app talks to, the tailnet it can
@@ -108,6 +110,7 @@ struct SettingsView: View {
 /// instance — the name this Mac takes there, and where the node stands right now.
 struct TailnetSettingsForm: View {
     @Bindable var model: TailnetModel
+    @State private var lines = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -130,7 +133,7 @@ struct TailnetSettingsForm: View {
                 field(
                     "control server",
                     text: Binding(get: { model.settings.controlURL }, set: { model.setControlURL($0) }),
-                    prompt: "empty for Tailscale, or https://scale.evsyukov.org"
+                    prompt: "https://headscale.example.org, or empty for Tailscale"
                 )
                 field(
                     "this Mac's name on the tailnet",
@@ -158,6 +161,13 @@ struct TailnetSettingsForm: View {
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            Text("The route is read when a dashboard is opened: changing it here takes effect the next time this Mac connects.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            log
+
             Spacer(minLength: 0)
         }
     }
@@ -168,6 +178,43 @@ struct TailnetSettingsForm: View {
             TextField(prompt, text: text)
                 .font(.system(.body, design: .monospaced))
         }
+    }
+
+    /// What the node wrote, folded away until somebody needs it: the answer to "why is it not up"
+    /// is in here and nowhere else.
+    @ViewBuilder
+    private var log: some View {
+        DisclosureGroup("The node's log") {
+            VStack(alignment: .leading, spacing: 6) {
+                ScrollView {
+                    Text(lines.isEmpty ? "The node has not written anything since this launch." : lines)
+                        .font(.system(size: 10, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(6)
+                }
+                .frame(height: 120)
+                .background(Theme.Palette.toolBackground, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+                HStack(spacing: 10) {
+                    Button("Read it") { Task { await read() } }
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(lines, forType: .string)
+                    }
+                    .disabled(lines.isEmpty)
+                    Spacer()
+                }
+                .font(.caption)
+            }
+            .padding(.top, 6)
+        }
+        .font(.caption)
+        .onAppear { Task { await read() } }
+    }
+
+    private func read() async {
+        lines = await model.logs()
     }
 
     @ViewBuilder

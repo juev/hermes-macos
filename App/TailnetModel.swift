@@ -158,6 +158,13 @@ final class TailnetModel {
         phase = settings.enabled ? .idle : .off
     }
 
+    /// The last lines the node wrote. When it does not come up, this is the one thing that says why:
+    /// the control server's answer, a socket the sandbox refused, a name it could not resolve.
+    func logs() async -> String {
+        let node = self.node
+        return await Task.detached(priority: .utility) { node.logs() }.value
+    }
+
     /// Opens the sign-in page the control server handed out, and the Tailscale app, which is the way
     /// onto the tailnet for a Mac that has one.
     func openLoginPage() {
