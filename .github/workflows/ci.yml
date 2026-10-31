@@ -93,6 +93,13 @@ jobs:
       - name: The app, with the node in it
         run: scripts/build.sh
 
+      # What a tag ships is a Release build with the same node linked; the two configurations differ
+      # in ways that have broken a launch before (a debug dylib beside the stub executable).
+      - name: The app, as a release builds it
+        env:
+          CONFIGURATION: Release
+        run: scripts/build.sh
+
       - name: The app starts with the node
         run: |
           app="build/Build/Products/Debug/Hermes.app"

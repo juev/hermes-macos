@@ -38,8 +38,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.evsyukov.hermes.macos
         PRODUCT_NAME: Hermes
-        MARKETING_VERSION: 0.1.4
-        CURRENT_PROJECT_VERSION: 5
+        MARKETING_VERSION: 0.1.5
+        CURRENT_PROJECT_VERSION: 6
         INFOPLIST_FILE: App/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         CODE_SIGN_ENTITLEMENTS: App/Hermes.entitlements

@@ -21,6 +21,17 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tailnet/go.mod
+          cache-dependency-path: tailnet/go.sum
+
+      # The node of the built-in tailnet is a Go framework, bound with gomobile and not committed:
+      # without this step the disk image would carry an app whose tailnet route says the node is not
+      # in the build, which is the one thing a release must not do.
+      - name: The tailnet node
+        run: scripts/build-tailnet.sh
+
       # Release, not Debug: from Xcode 16 a debug build keeps its code in a `Hermes.debug.dylib`
       # beside the stub executable, and that arrangement is not something to ship.
       - name: Build
@@ -87,6 +98,9 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v2
         with:
+          # A tag with a suffix is a candidate: it must not take the "Latest" badge from the last
+          # release that was not one.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             ${{ steps.dmg.outputs.path }}
             ${{ steps.dmg.outputs.path }}.sha256
