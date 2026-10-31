@@ -18,7 +18,7 @@ public actor GatewaySession {
 
     private let endpoint: Endpoint
     private let credentials: any SessionCredentials
-    private let transport: any SocketTransport
+    private var transport: any SocketTransport
     private let firstPause: Duration
     private let maxPause: Duration
     private var onEvent: (@Sendable (GatewayEvent) -> Void)?
@@ -33,6 +33,8 @@ public actor GatewaySession {
     /// How many connections became ready: a number that only grows, so a chat that starts listening
     /// late still learns a connection came and can join its session again on it.
     private var generation = 0
+    /// Set by `reconnect`: the next attempt is one this client asked for, not one the pause earned.
+    private var startingOver = false
 
     public init(
         endpoint: Endpoint,
@@ -94,6 +96,27 @@ public actor GatewaySession {
             Task { await open?.close() }
         }
         setState(.stopped)
+    }
+
+    /// Points the session at another route: the next attempt is made with [transport]. A `URLSession`
+    /// keeps the proxy it was built with and cannot be re-aimed, so the transport is replaced rather
+    /// than shared when the tailnet route under the socket changes.
+    public func setTransport(_ transport: any SocketTransport) {
+        self.transport = transport
+    }
+
+    /// Drops the socket under way, so the session opens another one with the transport it has now,
+    /// without waiting out the pause the last failure earned.
+    public func reconnect() {
+        guard wanted else { return }
+        startingOver = true
+        let open = connection
+        connection = nil
+        if let open {
+            Task { await open.close() }
+        } else {
+            setState(.waiting)
+        }
     }
 
     /// Calls a method on the connection under way. A chat opened while the socket is still coming up
@@ -168,8 +191,8 @@ public actor GatewaySession {
                     refusals += 1
                     if refusals >= 3 {
                         wanted = false
-                        connection = nil
                         setState(.failed("The dashboard refused the socket (\(status)). The sign-in may be over."))
+                        await closeCurrent()
                         return
                     }
                 } else {
@@ -178,19 +201,33 @@ public actor GatewaySession {
                 if error as? SessionError == .signInRequired {
                     // No attempt can succeed without a sign-in, and saying so beats a silent loop.
                     wanted = false
-                    connection = nil
                     setState(.failed("The sign-in is over. Sign in again to keep the connection."))
+                    await closeCurrent()
                     return
                 }
             }
 
-            connection = nil
+            await closeCurrent()
             guard wanted else { break }
+            // A socket this client asked to drop is not a failure: the next attempt goes at once
+            // instead of after the pause a broken connection would have earned.
+            if startingOver {
+                startingOver = false
+                pause = firstPause
+            }
             setState(.waiting)
             try? await Task.sleep(for: pause)
             pause = min(pause * 2, maxPause)
         }
         setState(.stopped)
+    }
+
+    /// Drops the connection of the attempt that just ended. An attempt that failed before
+    /// `gateway.ready` would otherwise leave its socket and read loop behind while the next one runs.
+    private func closeCurrent() async {
+        let open = connection
+        connection = nil
+        await open?.close()
     }
 
     private func handle(_ event: GatewayEvent) {

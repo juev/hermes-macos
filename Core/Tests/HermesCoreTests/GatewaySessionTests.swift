@@ -120,6 +120,22 @@ struct DashboardSessionTests {
         #expect(try await session.load()?.accessToken == "at")
         #expect(await session.currentTokens?.refreshToken == "rt")
     }
+
+    @Test("A ticket is asked for through the transport in force")
+    func ticketFollowsTheRoute() async throws {
+        let first = StubTransport([])
+        let session = DashboardSession(endpoint: endpoint, transport: first)
+        try await session.adopt(Tokens(accessToken: "at"))
+
+        // The route changed under the session: a URLSession keeps the proxy it was built with, so a
+        // ticket asked for through the old transport would go to a port that is gone.
+        let second = StubTransport([response(#"{"ticket":"t-2"}"#)])
+        await session.setTransport(second)
+
+        #expect(try await session.socketTicket() == "t-2")
+        #expect(first.requests.isEmpty)
+        #expect(second.requests.count == 1)
+    }
 }
 
 /// A transport that hands out sockets from a script, so a drop and a retry can be played.
@@ -333,6 +349,30 @@ struct GatewaySessionTests {
         try await Task.sleep(for: .milliseconds(80))
         #expect(await gateway.currentState() == .stopped)
         #expect(transport.sockets.count == 1)
+    }
+
+    @Test("A route change is picked up by the next attempt")
+    func transportSwap() async throws {
+        let first = FakeSocket()
+        first.push(readyFrame())
+        let old = ScriptedTransport([.socket(first)])
+        let second = FakeSocket()
+        second.push(readyFrame())
+        let route = ScriptedTransport([.socket(second)])
+        let gateway = session(old)
+
+        await gateway.start()
+        try await waitUntil { await gateway.currentState() == .ready }
+
+        // The proxy the socket was made with is gone: the transport of the route in force replaces
+        // it, and the socket under way is dropped so the session opens another one on that transport.
+        await gateway.setTransport(route)
+        await gateway.reconnect()
+        try await waitUntil { route.sockets.count == 1 }
+        try await waitUntil { await gateway.currentState() == .ready }
+
+        #expect(old.sockets.count == 1)
+        await gateway.stop()
     }
 }
 

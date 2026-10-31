@@ -63,7 +63,7 @@ func tunnel(w http.ResponseWriter, r *http.Request, dial func(context.Context, s
 		http.Error(w, "this server cannot hand the connection over", http.StatusInternalServerError)
 		return
 	}
-	client, _, err := hijacker.Hijack()
+	client, buffered, err := hijacker.Hijack()
 	if err != nil {
 		return
 	}
@@ -81,7 +81,11 @@ func tunnel(w http.ResponseWriter, r *http.Request, dial func(context.Context, s
 		client.Close()
 		return
 	}
-	go io.Copy(upstream, client)
+	// The reader of the hijack may already hold bytes the client wrote behind the request head — a
+	// request pipelined after the CONNECT, a `ClientHello` sent before the 200 arrived. Copying the
+	// raw connection would drop them: the tunnel would be up and the handshake inside it would hang.
+	// The buffered bytes go first, the connection the rest.
+	go io.Copy(upstream, buffered)
 	io.Copy(client, upstream)
 	upstream.Close()
 	client.Close()

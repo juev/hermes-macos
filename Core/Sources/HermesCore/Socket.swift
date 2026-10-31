@@ -19,7 +19,12 @@ public final class URLSessionSocketTransport: SocketTransport, @unchecked Sendab
 
     public init(timeout: TimeInterval = 30, proxy: TailnetProxy? = nil) {
         let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = timeout
+        // A socket is quiet for long stretches by nature: half a minute without a frame is a tool
+        // call, not a broken connection. `timeoutIntervalForRequest` is URLSession's "wait for
+        // additional data" timer, and on a web socket task it ends the task, so it stays far above
+        // any turn and `timeoutIntervalForResource` above that; the heartbeat decides liveness.
+        configuration.timeoutIntervalForRequest = max(timeout, 300)
+        configuration.timeoutIntervalForResource = .greatestFiniteMagnitude
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
         // The socket of a dashboard on the built-in tailnet is carried by the node's proxy too: a
