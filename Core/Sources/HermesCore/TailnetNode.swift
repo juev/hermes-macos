@@ -224,13 +224,17 @@ public struct UserSpaceTailnetNode: TailnetNode {
 
     public func start(_ settings: TailnetNodeSettings, directory: URL) throws -> TailnetProxy {
         #if canImport(HermesTailnet)
-        let answer = try Hermesnet.start(
+        // gomobile exports the four functions of the Go package as C functions named after it, so
+        // this is the whole binding: `HermesnetStart` answers "host:port" or fills the error.
+        var failure: NSError?
+        let answer = HermesnetStart(
             directory.path,
             settings.controlServer ?? "",
             settings.authKey,
-            settings.hostname
+            settings.hostname,
+            &failure
         )
-        // The node answers "host:port", and a start that failed says why in its error.
+        if let failure { throw failure }
         guard let proxy = TailnetProxy(address: answer) else {
             throw TailnetNodeError.noProxy(answer)
         }
@@ -244,13 +248,13 @@ public struct UserSpaceTailnetNode: TailnetNode {
 
     public func stop() {
         #if canImport(HermesTailnet)
-        Hermesnet.stop()
+        HermesnetStop()
         #endif
     }
 
     public func status() -> TailnetNodeStatus {
         #if canImport(HermesTailnet)
-        return TailnetNodeStatus.decode(Hermesnet.status())
+        return TailnetNodeStatus.decode(HermesnetStatus())
         #else
         return .stopped
         #endif
@@ -258,7 +262,7 @@ public struct UserSpaceTailnetNode: TailnetNode {
 
     public func logs() -> String {
         #if canImport(HermesTailnet)
-        return Hermesnet.logs()
+        return HermesnetLogs()
         #else
         return ""
         #endif
