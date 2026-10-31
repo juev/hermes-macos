@@ -54,8 +54,6 @@ struct TailnetNodeTests {
         #expect(TailnetControlServer.normalize("http://headscale.local:8080/") == "http://headscale.local:8080")
         #expect(TailnetControlServer.normalize("https://scale.evsyukov.org/?x=1#frag") == "https://scale.evsyukov.org")
         #expect(TailnetControlServer.normalize("https://") == nil)
-        #expect(TailnetControlServer.isTailscale("https://controlplane.tailscale.com"))
-        #expect(!TailnetControlServer.isTailscale("https://scale.evsyukov.org"))
     }
 
     @Test("The settings an empty control server means")

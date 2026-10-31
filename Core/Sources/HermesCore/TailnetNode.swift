@@ -47,12 +47,6 @@ public enum TailnetControlServer {
         }
         return components.url?.absoluteString
     }
-
-    /// True for the control plane Tailscale runs, which the node reaches without a URL.
-    public static func isTailscale(_ address: String) -> Bool {
-        guard let host = URL(string: address)?.host?.lowercased() else { return false }
-        return host == "controlplane.tailscale.com" || host == "login.tailscale.com"
-    }
 }
 
 /// The local proxy of a running node. URLSession carries HTTPS and WSS through a CONNECT and a plain

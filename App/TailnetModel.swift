@@ -158,17 +158,6 @@ final class TailnetModel {
         phase = settings.enabled ? .idle : .off
     }
 
-    /// Reads the state of the node once, for the settings window when nothing is connecting.
-    func refresh() async {
-        guard settings.enabled, node.isAvailable, proxy != nil else {
-            if !settings.enabled { phase = .off }
-            return
-        }
-        let node = self.node
-        let status = await Task.detached(priority: .utility) { node.status() }.value
-        apply(status)
-    }
-
     /// Opens the sign-in page the control server handed out, and the Tailscale app, which is the way
     /// onto the tailnet for a Mac that has one.
     func openLoginPage() {
