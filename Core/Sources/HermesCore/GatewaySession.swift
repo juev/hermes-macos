@@ -153,8 +153,8 @@ public actor GatewaySession {
                     refusals += 1
                     if refusals >= 3 {
                         wanted = false
-                        connection = nil
                         setState(.failed("The dashboard refused the socket (\(status)). The sign-in may be over."))
+                        await closeCurrent()
                         return
                     }
                 } else {
@@ -163,19 +163,27 @@ public actor GatewaySession {
                 if error as? SessionError == .signInRequired {
                     // No attempt can succeed without a sign-in, and saying so beats a silent loop.
                     wanted = false
-                    connection = nil
                     setState(.failed("The sign-in is over. Sign in again to keep the connection."))
+                    await closeCurrent()
                     return
                 }
             }
 
-            connection = nil
+            await closeCurrent()
             guard wanted else { break }
             setState(.waiting)
             try? await Task.sleep(for: pause)
             pause = min(pause * 2, maxPause)
         }
         setState(.stopped)
+    }
+
+    /// Drops the connection of the attempt that just ended. An attempt that failed before
+    /// `gateway.ready` would otherwise leave its socket and read loop behind while the next one runs.
+    private func closeCurrent() async {
+        let open = connection
+        connection = nil
+        await open?.close()
     }
 
     private func handle(_ event: GatewayEvent) {
