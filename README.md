@@ -22,7 +22,7 @@ dashboard's HTTP and its JSON-RPC socket.
   click, so the answer is what the eye lands on. Each day of a long chat opens with its own separator,
   the transcript follows a streaming answer until you scroll away, and a chat paints from disk before
   the dashboard answers.
-- **Writing** — Return sends, Option+Return starts a new line, the paperclip attaches a picture or a
+- **Writing** — Return sends, Shift+Return and Option+Return start a new line, the paperclip attaches a picture or a
   file, ⌘N starts a chat at once, the toolbar picks the model the chat answers on, and an approval, a
   choice or a secret from the agent arrives as a card above the field with a banner behind it.
 - **Files** — a file the agent delivers is drawn under the answer, a picture showing itself; a click

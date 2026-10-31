@@ -1,8 +1,9 @@
+import AppKit
 import HermesCore
 import SwiftUI
 
-/// Where a message is written. Return sends, Option+Return starts a new line — a chat is not a form,
-/// and the person should not have to reach for the mouse to say something.
+/// Where a message is written. Return sends; Shift+Return and Option+Return start a new line — a chat is
+/// not a form, and the person should not have to reach for the mouse to say something.
 public struct ComposerView: View {
     @Binding public var text: String
     /// A turn runs: the field still takes words, the button turns into a stop.
@@ -82,6 +83,22 @@ public struct ComposerView: View {
                     .lineLimit(1...8)
                     .focused($focused)
                     .onSubmit(send)
+                    // Return sends on its own, and the two keys a person presses for a paragraph
+                    // break insert one at the caret — the field editor is the text view this field
+                    // edits, so the newline lands where the cursor is, not at the end.
+                    .onKeyPress(phases: .down) { press in
+                        guard press.key == .return else { return .ignored }
+                        if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
+                            if let editor = NSApplication.shared.keyWindow?.firstResponder as? NSTextView {
+                                editor.insertNewline(nil)
+                            } else {
+                                text += "\n"
+                            }
+                            return .handled
+                        }
+                        send()
+                        return .handled
+                    }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 9)
                     .background(Theme.Palette.toolBackground, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -105,7 +122,6 @@ public struct ComposerView: View {
                     .buttonStyle(.borderedProminent)
                     .clipShape(Circle())
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .keyboardShortcut(.return, modifiers: [])
                     .help("Send the message")
                 }
             }
