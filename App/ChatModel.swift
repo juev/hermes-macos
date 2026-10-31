@@ -126,7 +126,7 @@ final class ChatModel {
         let watching = watched
         for (storedID, chat) in watching {
             guard let joined = try? await chat.rejoin() else { continue }
-            if joined?.running != true {
+            if !joined.running {
                 watched[storedID] = nil
                 await chat.leave()
             }
