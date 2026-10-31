@@ -248,7 +248,10 @@ public actor GatewayConnection {
                 // be decided here rather than left to the transport — a userspace tailnet node keeps
                 // a connection whose path is gone open, and `receive` never returns.
                 guard await self.stillThere(after: silence) else { return }
-                _ = try? await self.call("gateway.ping", timeout: .seconds(10))
+                // Sent, not waited for: the ping exists to make the gateway write something, and the
+                // frame it answers with is what this loop counts. Waiting for the answer here would
+                // park the loop for the ping's whole timeout — exactly when the socket may be dead.
+                Task { [weak self] in _ = try? await self?.call("gateway.ping", timeout: .seconds(10)) }
             }
         }
     }
