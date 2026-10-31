@@ -40,6 +40,12 @@ final class ConnectionModel {
     private(set) var chatHub: ChatHub?
     private(set) var dashboardSession: DashboardSession?
 
+    init() {
+        // The route can change under an open dashboard — the node is left, started, or the setting
+        // that runs it is turned off — and the transports have to follow it.
+        tailnet.onRouteChange = { [weak self] in self?.routeChanged() }
+    }
+
     var endpoint: Endpoint? { Endpoint(address: address) }
 
     var isBusy: Bool { phase == .checking || phase == .joiningTailnet || phase == .waitingForBrowser }
@@ -118,6 +124,22 @@ final class ConnectionModel {
         dashboardSession = nil
         if let session {
             Task { await session.stop() }
+        }
+    }
+
+    /// The tailnet route changed under the open socket. A `URLSession` keeps the proxy it was built
+    /// with and cannot be re-aimed, so the ticket session and the socket session are handed transports
+    /// for the route in force, and the socket is opened again on them — closing it is what makes the
+    /// session come back over the new route instead of retrying through a port the node left behind.
+    private func routeChanged() {
+        guard let dashboard = dashboardSession, let gateway = gatewaySession else { return }
+        let proxy = tailnet.proxy
+        let route = proxy == nil ? "the system route" : "the node"
+        Log.app.notice("tailnet: the route changed, reconnecting through \(route, privacy: .public)")
+        Task {
+            await dashboard.setTransport(URLSessionTransport(proxy: proxy))
+            await gateway.setTransport(URLSessionSocketTransport(proxy: proxy))
+            await gateway.reconnect()
         }
     }
 
