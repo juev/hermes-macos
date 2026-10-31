@@ -56,11 +56,12 @@ final class TailnetModel {
     init(node: any TailnetNode = UserSpaceTailnetNode(), defaults: UserDefaults = .standard) {
         self.node = node
         self.defaults = defaults
-        settings = Settings(
+        let settings = Settings(
             enabled: defaults.bool(forKey: Key.enabled),
             controlURL: defaults.string(forKey: Key.controlURL) ?? "",
             hostname: defaults.string(forKey: Key.hostname) ?? Settings.hostname
         )
+        self.settings = settings
         phase = settings.enabled ? .idle : .off
     }
 

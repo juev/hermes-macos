@@ -34,7 +34,8 @@ PATH="$gobin:$PATH" gomobile bind \
 ls -lh "$root/Core/Artifacts/HermesTailnet.xcframework"
 
 # What the Swift side calls, printed so a rename of a binding shows up in the log of a failed build.
-header=$(find "$root/Core/Artifacts/HermesTailnet.xcframework" -name 'HermesTailnet.h' | head -1)
+header=$(find "$root/Core/Artifacts/HermesTailnet.xcframework" -name '*.h' | head -1)
 if [ -n "$header" ]; then
-    grep -E "^\+ \(|^@interface" "$header"
+    echo "header: $header"
+    sed -n '1,80p' "$header" || true
 fi
