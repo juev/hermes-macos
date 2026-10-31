@@ -110,6 +110,7 @@ func readyFrame(heartbeat: Bool = false, sessionAuthority: Bool = false) -> Stri
 struct GatewayConnectionTests {
     private func make(
         heartbeatInterval: Duration = .seconds(60),
+        silence: Duration = .seconds(45),
         events: Recorder<GatewayEvent>? = nil,
         requests: Recorder<ServerRequest>? = nil
     ) -> (GatewayConnection, FakeSocket) {
@@ -118,6 +119,7 @@ struct GatewayConnectionTests {
             url: URL(string: "wss://hermes.example.test/api/ws")!,
             transport: transport,
             heartbeatInterval: heartbeatInterval,
+            silence: silence,
             onEvent: { events?.record($0) },
             onRequest: { requests?.record($0) }
         )
@@ -260,6 +262,40 @@ struct GatewayConnectionTests {
 
         try await Task.sleep(for: .milliseconds(260))
         #expect(socket.sentFrames.allSatisfy { $0["method"]?.stringValue != "gateway.ping" })
+        await connection.close()
+    }
+
+    @Test("A socket that stops sending frames ends the connection")
+    func silentSocketEnds() async throws {
+        let (connection, socket) = make(heartbeatInterval: .milliseconds(30), silence: .milliseconds(120))
+        socket.push(readyFrame(heartbeat: true))
+        _ = try await connection.start(timeout: .seconds(5))
+
+        // Nothing follows the ready frame: the socket is open on the transport and dead on the wire,
+        // which is what a tailnet node leaves behind once its path to the dashboard is gone.
+        var ended = false
+        for _ in 0..<100 where !ended {
+            try await Task.sleep(for: .milliseconds(20))
+            ended = await connection.hasEnded()
+        }
+        #expect(ended, "a connection with no frame for longer than the window must end")
+        await connection.close()
+    }
+
+    @Test("A connection that keeps sending frames is left alone")
+    func livingSocketStays() async throws {
+        let (connection, socket) = make(heartbeatInterval: .milliseconds(30), silence: .milliseconds(120))
+        socket.push(readyFrame(heartbeat: true))
+        _ = try await connection.start(timeout: .seconds(5))
+
+        // Quiet is not dead: a turn that streams one thing every so often keeps the socket, however
+        // far apart its frames are.
+        for _ in 0..<10 {
+            socket.push(#"{"jsonrpc":"2.0","method":"event","params":{"type":"status.update","session_id":"s-1","payload":{"text":"working"}}}"#)
+            try await Task.sleep(for: .milliseconds(40))
+        }
+        let ended = await connection.hasEnded()
+        #expect(ended == false)
         await connection.close()
     }
 }

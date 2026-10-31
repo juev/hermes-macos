@@ -24,6 +24,7 @@ public actor GatewayConnection {
     private let url: URL
     private let transport: any SocketTransport
     private let heartbeatInterval: Duration
+    private let silence: Duration
     private let onEvent: EventHandler?
     private let onRequest: RequestHandler?
 
@@ -36,18 +37,22 @@ public actor GatewayConnection {
     private var ready: GatewayReady?
     private var sessionAuthority = false
     private var ended = false
+    /// When the last frame arrived, whatever it was: a frame is the connection living.
+    private var lastFrame = ContinuousClock.now
     private var endWaiters: [CheckedContinuation<Void, Never>] = []
 
     public init(
         url: URL,
         transport: any SocketTransport = URLSessionSocketTransport(),
         heartbeatInterval: Duration = .seconds(15),
+        silence: Duration = .seconds(45),
         onEvent: EventHandler? = nil,
         onRequest: RequestHandler? = nil
     ) {
         self.url = url
         self.transport = transport
         self.heartbeatInterval = heartbeatInterval
+        self.silence = silence
         self.onEvent = onEvent
         self.onRequest = onRequest
     }
@@ -55,12 +60,17 @@ public actor GatewayConnection {
     /// True when the gateway owns the sessions; it says so in `gateway.ready`.
     public func isSessionAuthority() -> Bool { sessionAuthority }
 
+    /// True once the connection is over, for a caller that watches it without waiting on it.
+    public func hasEnded() -> Bool { ended }
+
     /// Opens the socket, waits for `gateway.ready` and leaves the connection ready for calls.
     @discardableResult
     public func start(timeout: Duration = .seconds(20)) async throws -> GatewayReady {
         guard !ended else { throw GatewayError.closed }
         let connection = try await transport.connect(to: url)
         socket = connection
+        // A slow handshake is not silence: the window counts from the moment the socket is up.
+        lastFrame = .now
         pump = Task { [weak self] in
             await self?.run(connection)
         }
@@ -162,6 +172,8 @@ public actor GatewayConnection {
                 end(nil)
                 return
             }
+            // Any frame counts, including an answer to a ping and one this client does not parse.
+            lastFrame = .now
             guard let value = try? JSONValue.decode(text), let frame = Frame.parse(value) else { continue }
 
             switch frame {
@@ -227,13 +239,26 @@ public actor GatewayConnection {
     private func startHeartbeat() {
         heartbeat?.cancel()
         let interval = heartbeatInterval
+        let silence = silence
         heartbeat = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: interval)
                 guard let self else { return }
-                // An error is an answer too: the dashboard replied, so the socket is alive.
+                // `docs/protocol.md` §5: 45 seconds without a frame is a lost connection. It has to
+                // be decided here rather than left to the transport — a userspace tailnet node keeps
+                // a connection whose path is gone open, and `receive` never returns.
+                guard await self.stillThere(after: silence) else { return }
                 _ = try? await self.call("gateway.ping", timeout: .seconds(10))
             }
         }
+    }
+
+    /// True while a frame came within [window]. A longer silence ends the connection: the socket is
+    /// closed, so the pump stops and whoever watches the end of the connection makes another one.
+    private func stillThere(after window: Duration) -> Bool {
+        guard ContinuousClock.now - lastFrame >= window else { return true }
+        socket?.close()
+        end(GatewayError.timedOut(method: "gateway.ping"))
+        return false
     }
 }
