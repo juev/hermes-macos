@@ -54,3 +54,56 @@ jobs:
             cat /tmp/launch.log
             exit 1
           fi
+
+  # The tailnet node is a Go framework, bound with gomobile and linked into the app. It is not
+  # committed, so this job is the only place that proves the Go package builds for macOS and that
+  # what gomobile generates is what the Swift side calls.
+  tailnet:
+    name: the node, bound and linked
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/checkout@v4
+        with:
+          repository: juev/hermes
+          path: hermes-contract
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: tailnet/go.mod
+          cache-dependency-path: tailnet/go.sum
+
+      - name: Toolchain
+        run: brew install xcodegen
+
+      # The proxy the sessions take, against real servers: plain HTTP, a CONNECT that carries TLS,
+      # and a name the node cannot reach. Runs without a node, so it needs no tailnet.
+      - name: The node's proxy
+        run: cd tailnet && go test ./...
+
+      - name: The node, bound for macOS
+        run: scripts/build-tailnet.sh
+
+      - name: Tests, with the node in the package
+        env:
+          HERMES_CONTRACT_FIXTURES: ${{ github.workspace }}/hermes-contract/docs/fixtures
+        run: scripts/test.sh
+
+      - name: The app, with the node in it
+        run: scripts/build.sh
+
+      - name: The app starts with the node
+        run: |
+          app="build/Build/Products/Debug/Hermes.app"
+          "$app/Contents/MacOS/Hermes" > /tmp/launch.log 2>&1 &
+          pid=$!
+          sleep 5
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "the app is running"
+            kill "$pid"
+          else
+            echo "the app did not stay up:"
+            cat /tmp/launch.log
+            exit 1
+          fi

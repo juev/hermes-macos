@@ -20,6 +20,7 @@ struct RootView: View {
                 session: session,
                 gateway: gateway,
                 hub: hub,
+                tailnet: connection.tailnet,
                 gatewayState: connection.gateway,
                 onDisconnect: { connection.disconnect() }
             )

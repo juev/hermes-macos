@@ -18,6 +18,12 @@ Rules for anyone changing this repository, human or agent. Build and test comman
 - The package has three parts and a change goes in the lowest one that can hold it: `HermesCore` for the
   protocol and the model, `HermesUI` for the typography and the views, `App` for the window and the
   things that only exist inside a running app — notifications, the Keychain, the file picker.
+- `scripts/build-tailnet.sh` binds `tailnet/` — the Go package behind the built-in tailnet, the
+  userspace node the Android client also carries — into `Core/Artifacts/HermesTailnet.xcframework`
+  with gomobile. The artifact is not committed; without it the app builds and the tailnet route says
+  the node is not in this build. The `tailnet` job of CI is the one check that the Go side compiles
+  for macOS and that the generated bindings are the ones `Core/Sources/HermesCore/TailnetNode.swift`
+  calls, so a change to either goes with it.
 - `scripts/smoke.sh` runs the client's own code against a live dashboard, with the tokens the app keeps
   in the Keychain, and prints what came back. A change to the wire is not done until it passes; it is
   how three real faults were found that no test had: a tailnet address with no route, a call made

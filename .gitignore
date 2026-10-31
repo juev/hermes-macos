@@ -16,3 +16,6 @@ Hermes.xcodeproj/
 # The payloads of the contract are copied here by scripts/sync-fixtures.sh, never committed.
 Core/Tests/HermesCoreTests/Fixtures/**
 !Core/Tests/HermesCoreTests/Fixtures/.gitkeep
+
+# The tailnet node, bound from tailnet/ by scripts/build-tailnet.sh, never committed.
+Core/Artifacts/

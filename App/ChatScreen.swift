@@ -12,16 +12,19 @@ struct ChatScreen: View {
     @State private var deleting: SessionSummary?
 
     let gatewayState: GatewaySession.State
+    let tailnet: TailnetModel
     let onDisconnect: () -> Void
 
     init(
         session: DashboardSession,
         gateway: GatewaySession,
         hub: ChatHub,
+        tailnet: TailnetModel,
         gatewayState: GatewaySession.State = .ready,
         onDisconnect: @escaping () -> Void = {}
     ) {
         _model = State(initialValue: ChatModel(session: session, gateway: gateway, hub: hub))
+        self.tailnet = tailnet
         self.gatewayState = gatewayState
         self.onDisconnect = onDisconnect
     }
@@ -75,6 +78,7 @@ struct ChatScreen: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView(
                 push: model.push,
+                tailnet: tailnet,
                 address: model.serverAddress,
                 onChangeServer: onDisconnect
             )
