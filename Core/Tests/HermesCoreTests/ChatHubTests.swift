@@ -105,4 +105,40 @@ struct ChatHubTests {
         #expect(await hub.joinedChats == 0)
         await gateway.stop()
     }
+
+    @Test("The hub says a connection came only after the one the chats joined")
+    func connectionCame() async throws {
+        let first = FakeSocket()
+        first.push(readyFrame())
+        let second = FakeSocket()
+        second.push(readyFrame())
+        let gateway = GatewaySession(
+            endpoint: endpoint,
+            credentials: FakeCredentials(),
+            transport: ScriptedTransport([.socket(first), .socket(second)]),
+            firstPause: .milliseconds(20)
+        )
+        await gateway.start()
+        try await waitUntil { await gateway.currentState() == .ready }
+        let hub = ChatHub(gateway: gateway)
+
+        let came = Recorder<Int>()
+        await hub.setConnectionHandler { came.record(1) }
+
+        let chat = ChatSession(gateway: gateway, hub: hub)
+        async let joined = chat.join(storedID: "stored-1")
+        try await waitUntil { first.sentFrames.contains { $0["method"]?.stringValue == "session.resume" } }
+        let resume = try #require(first.sentFrames.last { $0["method"]?.stringValue == "session.resume" })
+        let answer: JSONValue = ["jsonrpc": "2.0", "id": resume["id"] ?? "x", "result": ["session_id": "live-1"]]
+        first.push(answer.encodedString)
+        _ = try await joined
+
+        // The connection the chat joined is not news: the window would read its chat again for nothing.
+        #expect(came.all.isEmpty)
+
+        // A drop and a new connection is news.
+        first.finish()
+        try await waitUntil { came.all.count == 1 }
+        await gateway.stop()
+    }
 }

@@ -24,11 +24,15 @@ public actor GatewaySession {
     private var onEvent: (@Sendable (GatewayEvent) -> Void)?
     private var onRequest: (@Sendable (ServerRequest) -> Void)?
     private let onState: (@Sendable (State) -> Void)?
+    private var onConnection: (@Sendable (Int) -> Void)?
 
     private var loop: Task<Void, Never>?
     private var connection: GatewayConnection?
     private var state: State = .idle
     private var wanted = false
+    /// How many connections became ready: a number that only grows, so a chat that starts listening
+    /// late still learns a connection came and can join its session again on it.
+    private var generation = 0
     /// Set by `reconnect`: the next attempt is one this client asked for, not one the pause earned.
     private var startingOver = false
 
@@ -53,6 +57,15 @@ public actor GatewaySession {
     }
 
     public func currentState() -> State { state }
+
+    /// Who hears that a connection became ready, with the number of that connection. A chat joins its
+    /// session again on every one after the first, because the live id it held may be gone.
+    public func setConnectionHandler(_ handler: (@Sendable (Int) -> Void)?) {
+        onConnection = handler
+    }
+
+    /// How many connections became ready so far.
+    public func currentGeneration() -> Int { generation }
 
     /// Who hears about the events and the questions of the gateway. The chat takes them once it has
     /// joined a session; until then nothing is listening.
@@ -166,6 +179,8 @@ public actor GatewaySession {
                 self.connection = connection
                 try await connection.start()
                 setState(.ready)
+                generation += 1
+                onConnection?(generation)
                 pause = firstPause
                 refusals = 0
                 await connection.waitForEnd()

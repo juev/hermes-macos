@@ -284,15 +284,17 @@ struct GatewayConnectionTests {
 
     @Test("A connection that keeps sending frames is left alone")
     func livingSocketStays() async throws {
-        let (connection, socket) = make(heartbeatInterval: .milliseconds(30), silence: .milliseconds(120))
+        // The window is ten times the distance between frames, so a slow CI runner cannot make this
+        // connection look dead: only a watchdog that ignores frames would end it.
+        let (connection, socket) = make(heartbeatInterval: .milliseconds(50), silence: .milliseconds(500))
         socket.push(readyFrame(heartbeat: true))
         _ = try await connection.start(timeout: .seconds(5))
 
         // Quiet is not dead: a turn that streams one thing every so often keeps the socket, however
         // far apart its frames are.
-        for _ in 0..<10 {
+        for _ in 0..<20 {
             socket.push(#"{"jsonrpc":"2.0","method":"event","params":{"type":"status.update","session_id":"s-1","payload":{"text":"working"}}}"#)
-            try await Task.sleep(for: .milliseconds(40))
+            try await Task.sleep(for: .milliseconds(50))
         }
         let ended = await connection.hasEnded()
         #expect(ended == false)
