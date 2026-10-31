@@ -46,6 +46,11 @@ final class TailnetModel {
     private var poller: Task<Void, Never>?
     /// The link already opened, so a state that keeps repeating opens one browser tab, not twenty.
     private var openedLogin: URL?
+    /// What the window does when the route under the dashboard changed: the node started, was left,
+    /// or the setting that starts it was turned on or off. A `URLSession` keeps the proxy it was
+    /// built with, so the transports of an open dashboard have to be made again for the route in
+    /// force — `ConnectionModel` listens here for that.
+    @ObservationIgnored var onRouteChange: (@MainActor () -> Void)?
 
     private enum Key {
         static let enabled = "org.evsyukov.hermes.macos.tailnet.enabled"
@@ -80,9 +85,11 @@ final class TailnetModel {
         settings.enabled = enabled
         defaults.set(enabled, forKey: Key.enabled)
         if !enabled {
+            // Leaving announces the change itself.
             leave()
         } else {
             phase = .idle
+            onRouteChange?()
         }
     }
 
@@ -137,7 +144,12 @@ final class TailnetModel {
         let deadline = ContinuousClock.now + timeout
         while ContinuousClock.now < deadline {
             try Task.checkCancellation()
-            if status.isRunning, let proxy { return proxy }
+            if status.isRunning, let proxy {
+                // The node is on the tailnet and its proxy exists: whatever is open over another
+                // route can be made again over this one.
+                onRouteChange?()
+                return proxy
+            }
             if case .failed(let message) = phase {
                 throw TailnetJoinFailure(message: message)
             }
@@ -156,6 +168,7 @@ final class TailnetModel {
         status = .stopped
         openedLogin = nil
         phase = settings.enabled ? .idle : .off
+        onRouteChange?()
     }
 
     /// The last lines the node wrote. When it does not come up, this is the one thing that says why:

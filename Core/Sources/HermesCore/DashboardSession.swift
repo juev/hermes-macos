@@ -15,7 +15,7 @@ public protocol SessionCredentials: Sendable {
 /// run out, and dropped when the server says the session is over.
 public actor DashboardSession: SessionCredentials {
     public nonisolated let endpoint: Endpoint
-    private let client: DashboardClient
+    private var client: DashboardClient
     private let storage: (any TokenStorage)?
     private let skew: TimeInterval
     private let now: @Sendable () -> Date
@@ -36,6 +36,13 @@ public actor DashboardSession: SessionCredentials {
     }
 
     public var currentTokens: Tokens? { tokens }
+
+    /// Points the session at another route. A `URLSession` keeps the proxy it was built with, so the
+    /// client is made again instead of shared when the tailnet route under it changes — the ticket
+    /// this session hands the socket would otherwise be asked for through a proxy that is gone.
+    public func setTransport(_ transport: any HTTPTransport) {
+        client = DashboardClient(endpoint: endpoint, transport: transport)
+    }
 
     /// Reads what the Keychain kept for this server, at launch.
     @discardableResult
