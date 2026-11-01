@@ -15,7 +15,8 @@ dashboard's HTTP and its JSON-RPC socket.
   have run out the app says so instead of opening a browser by itself.
 - **Chats** — the sidebar groups them the way a long list is read (pinned, today, yesterday, the last
   week and month, then by month and year), with the archive behind a button, a pinned search field, and
-  rename, archive and delete on a right click.
+  rename, archive and delete on a right click. The runs of one cron job under one date heading fold
+  into a single row named by the job, with the count of runs and a chevron that opens the older ones.
 - **Reading** — the answer is set for reading and Markdown is rendered rather than shown: headings,
   lists, quotes, code, and tables whose numbers line up on the right by themselves. What a turn
   did on the way — its thinking, its commands, its tool runs — folds into a single line that opens on a

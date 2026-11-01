@@ -15,20 +15,56 @@ public enum Sidebar {
         case year(Int)
     }
 
+    /// One line of a section: a chat, or the runs of one cron job folded into the newest of them.
+    ///
+    /// The gateway keeps one session per firing of a job, titled `<job> · Nov 01 12:28`, and a list
+    /// that draws sessions would show a firing per line. Telegram reads a job as one thread because
+    /// the topic there is the job's delivery address, not a session; this is the same reading made of
+    /// rows, keyed on the title the gateway wrote because a session carries no job field.
+    public struct Row: Sendable, Equatable, Identifiable {
+        /// The newest run of the job, or the chat itself.
+        public let chat: SessionSummary
+        /// The older runs of the same job, newest first; empty for anything that is not a folded row.
+        public let runs: [SessionSummary]
+        /// The job a folded row stands for, which is also the words the row shows.
+        public let job: String?
+
+        public var id: SessionSummary.ID { chat.id }
+        public var count: Int { runs.count + 1 }
+        public var folded: Bool { !runs.isEmpty }
+        /// A folded row is named by its job: the newest run's own stamp would push the count out.
+        public var label: String { job ?? chat.label }
+        /// Any run of the job unread is the row unread.
+        public var unread: Bool { chat.unread || runs.contains(where: \.unread) }
+
+        public init(chat: SessionSummary, runs: [SessionSummary] = [], job: String? = nil) {
+            self.chat = chat
+            self.runs = runs
+            self.job = job
+        }
+    }
+
     public struct Section: Sendable, Equatable, Identifiable {
         public let group: Group
-        public let chats: [SessionSummary]
+        public let rows: [Row]
 
         public var id: Group { group }
 
-        public init(group: Group, chats: [SessionSummary]) {
+        /// Every chat of the section, a folded job's runs in their place.
+        public var chats: [SessionSummary] { rows.flatMap { [$0.chat] + $0.runs } }
+
+        public init(group: Group, rows: [Row]) {
             self.group = group
-            self.chats = chats
+            self.rows = rows
+        }
+
+        public init(group: Group, chats: [SessionSummary]) {
+            self.init(group: group, rows: Sidebar.fold(chats))
         }
     }
 
     /// Newest activity first inside every group, and pinned chats apart from the dates they would
-    /// otherwise fall into.
+    /// otherwise fall into. The runs of one cron job inside a group fold into one row.
     public static func sections(
         _ chats: [SessionSummary],
         now: Date = Date(),
@@ -46,11 +82,57 @@ public enum Sidebar {
         }
 
         var sections: [Section] = []
-        if !pinned.isEmpty { sections.append(Section(group: .pinned, chats: pinned)) }
+        if !pinned.isEmpty { sections.append(Section(group: .pinned, rows: fold(pinned))) }
         for group in order {
-            sections.append(Section(group: group, chats: byGroup[group] ?? []))
+            sections.append(Section(group: group, rows: fold(byGroup[group] ?? [])))
         }
         return sections
+    }
+
+    /// Chats newest first in, rows out: each job's newest run stands where it was, its older runs behind it.
+    static func fold(_ chats: [SessionSummary]) -> [Row] {
+        var rows: [Row] = []
+        var placed: [String: Int] = [:]
+        for chat in chats {
+            guard let job = cronJobKey(chat) else {
+                rows.append(Row(chat: chat))
+                continue
+            }
+            if let index = placed[job] {
+                let row = rows[index]
+                rows[index] = Row(chat: row.chat, runs: row.runs + [chat], job: job)
+            } else {
+                placed[job] = rows.count
+                // A run on its own is an ordinary row, named by its own title until a second run
+                // joins it and the row starts reading as the job.
+                rows.append(Row(chat: chat))
+            }
+        }
+        return rows
+    }
+
+    /// The gateway titles a run `<job name> · Nov 01 12:28`; `%b` may come out in another language.
+    private static let stampPattern = try? NSRegularExpression(pattern: #"^(.*) · \p{L}{3} \d{1,2} \d{2}:\d{2}$"#)
+
+    /// The fallback title of a run: `cron <job id>`, maybe with the end of the run id after it.
+    private static let fallbackPattern = try? NSRegularExpression(pattern: #"^cron ([0-9a-fA-F]{6,})(?: \S+)?$"#)
+
+    /// Which cron job a chat is a run of, read from the title the gateway wrote — the list carries no
+    /// job field. Nil for any other source and for a run renamed by hand.
+    public static func cronJobKey(_ chat: SessionSummary) -> String? {
+        guard chat.source == "cron" else { return nil }
+        let title = chat.title
+        let range = NSRange(title.startIndex..., in: title)
+        if let match = stampPattern?.firstMatch(in: title, range: range),
+           let head = Range(match.range(at: 1), in: title) {
+            let job = String(title[head]).trimmingCharacters(in: .whitespaces)
+            return job.isEmpty ? nil : job
+        }
+        if let match = fallbackPattern?.firstMatch(in: title, range: range),
+           let job = Range(match.range(at: 1), in: title) {
+            return "cron \(title[job])"
+        }
+        return nil
     }
 
     static func group(for chat: SessionSummary, now: Date, calendar: Calendar) -> Group {
