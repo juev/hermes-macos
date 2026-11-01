@@ -103,7 +103,9 @@ public enum Sidebar {
                 rows[index] = Row(chat: row.chat, runs: row.runs + [chat], job: job)
             } else {
                 placed[job] = rows.count
-                rows.append(Row(chat: chat, job: job))
+                // A run on its own is an ordinary row, named by its own title until a second run
+                // joins it and the row starts reading as the job.
+                rows.append(Row(chat: chat))
             }
         }
         return rows
