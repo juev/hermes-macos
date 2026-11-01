@@ -12,6 +12,10 @@ public struct SessionListView: View {
     public let showingArchive: Bool
     public let onToggleArchive: (() -> Void)?
 
+    /// Which folded rows are open, by the id of the run they show. A run that arrives later replaces
+    /// the row's id and the row closes again, which is what a fresh run should do.
+    @State private var expanded: Set<SessionSummary.ID> = []
+
     public init(
         sections: [Sidebar.Section],
         selection: Binding<SessionSummary.ID?>,
@@ -48,16 +52,25 @@ public struct SessionListView: View {
         List(selection: $selection) {
             ForEach(sections) { section in
                 Section {
-                    ForEach(section.chats) { session in
-                        SessionRow(session: session)
-                            .tag(session.id)
-                            .contextMenu {
-                                Button(session.pinned ? "Unpin" : "Pin") { onPin?(session, !session.pinned) }
-                                Button("Rename…") { onRename?(session) }
-                                Button(session.archived ? "Unarchive" : "Archive") { onArchive?(session, !session.archived) }
-                                Divider()
-                                Button("Delete…", role: .destructive) { onDelete?(session) }
+                    ForEach(section.rows) { row in
+                        SessionRow(
+                            session: row.chat,
+                            label: row.folded ? row.label : nil,
+                            runCount: row.folded ? row.count : nil,
+                            unread: row.unread,
+                            expanded: expanded.contains(row.id),
+                            onToggleRuns: row.folded ? { toggle(row.id) } : nil
+                        )
+                        .tag(row.chat.id)
+                        .contextMenu { menu(for: row.chat) }
+                        if row.folded, expanded.contains(row.id) {
+                            ForEach(row.runs) { run in
+                                SessionRow(session: run)
+                                    .tag(run.id)
+                                    .padding(.leading, 14)
+                                    .contextMenu { menu(for: run) }
                             }
+                        }
                     }
                 } header: {
                     Text(Sidebar.title(for: section.group))
@@ -89,14 +102,54 @@ public struct SessionListView: View {
             }
         }
     }
+
+    private func toggle(_ id: SessionSummary.ID) {
+        if expanded.contains(id) {
+            expanded.remove(id)
+        } else {
+            expanded.insert(id)
+        }
+    }
+
+    @ViewBuilder
+    private func menu(for session: SessionSummary) -> some View {
+        Button(session.pinned ? "Unpin" : "Pin") { onPin?(session, !session.pinned) }
+        Button("Rename…") { onRename?(session) }
+        Button(session.archived ? "Unarchive" : "Archive") { onArchive?(session, !session.archived) }
+        Divider()
+        Button("Delete…", role: .destructive) { onDelete?(session) }
+    }
 }
 
 /// One chat in the list: what it is called, where it came from, when it last moved.
+///
+/// A folded row stands for the runs of one cron job: it is named by the job, says how many runs it
+/// holds, and its chevron opens the older runs in the list.
 public struct SessionRow: View {
     public let session: SessionSummary
+    /// The job's name, for a row that folds several runs; nil for a chat.
+    public let label: String?
+    /// How many runs a folded row holds, the one it shows included; nil for a chat.
+    public let runCount: Int?
+    /// The row is unread when any run it folds is unread.
+    public let unread: Bool
+    public let expanded: Bool
+    public let onToggleRuns: (() -> Void)?
 
-    public init(session: SessionSummary) {
+    public init(
+        session: SessionSummary,
+        label: String? = nil,
+        runCount: Int? = nil,
+        unread: Bool? = nil,
+        expanded: Bool = false,
+        onToggleRuns: (() -> Void)? = nil
+    ) {
         self.session = session
+        self.label = label
+        self.runCount = runCount
+        self.unread = unread ?? session.unread
+        self.expanded = expanded
+        self.onToggleRuns = onToggleRuns
     }
 
     private var glyph: String {
@@ -131,16 +184,29 @@ public struct SessionRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(PlainText.of(session.label))
+                    Text(PlainText.of(label ?? session.label))
                         .font(Theme.Fonts.sessionTitle)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                    if session.unread {
+                    if unread {
                         Circle()
                             .fill(Color.accentColor)
                             .frame(width: 6, height: 6)
                     }
                     Spacer(minLength: 4)
+                    if let onToggleRuns, let runCount {
+                        Button(action: onToggleRuns) {
+                            HStack(spacing: 3) {
+                                Text("\(runCount) runs")
+                                Image(systemName: expanded ? "chevron.down" : "chevron.right")
+                            }
+                            .font(Theme.Fonts.sessionMeta)
+                            .foregroundStyle(.secondary)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(expanded ? "Hide earlier runs" : "Show earlier runs")
+                    }
                     if session.pinned {
                         Image(systemName: "pin.fill")
                             .font(.system(size: 8))
