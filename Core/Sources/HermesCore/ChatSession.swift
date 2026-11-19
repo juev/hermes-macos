@@ -173,17 +173,22 @@ public actor ChatSession {
         guard let live = answer["session_id"]?.scalarString, !live.isEmpty else {
             throw ChatError.noLiveSession
         }
+        storedID = answer["stored_session_id"]?.scalarString ?? answer["session_key"]?.scalarString
         liveID = live
         await listen()
         return live
     }
+
+    public func storedIdentity() -> String? { storedID }
 
     /// Sends a prompt into the live session.
     public func submit(_ text: String) async throws {
         guard let liveID else { throw ChatError.notConnected }
         _ = try await gateway.call("prompt.submit", params: [
             "session_id": .string(liveID),
-            "text": .string(text)
+            "text": .string(text),
+            "queued": true,
+            "submission_id": .string(UUID().uuidString)
         ])
     }
 

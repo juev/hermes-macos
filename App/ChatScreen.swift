@@ -335,6 +335,16 @@ struct ChatScreen: View {
                         onSend: { Task { await model.send() } },
                         onStop: { Task { await model.stop() } }
                     )
+                    if let next = model.queuedMessages.first {
+                        Text("Queued on this Mac (\(model.queuedMessages.count)): \(next)")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
+                    }
+                    if let latest = model.unconfirmedMessages.last {
+                        Text("Delivery not confirmed: \(latest)")
+                            .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal)
+                    }
                 }
             }
         }

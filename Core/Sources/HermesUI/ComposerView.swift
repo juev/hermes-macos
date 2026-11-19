@@ -113,7 +113,8 @@ public struct ComposerView: View {
                     .tint(.secondary)
                     .clipShape(Circle())
                     .help("Stop the turn")
-                } else {
+                }
+                if !isRunning || hasContent {
                     Button(action: send) {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 12, weight: .semibold))
@@ -121,8 +122,8 @@ public struct ComposerView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .clipShape(Circle())
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help("Send the message")
+                    .disabled(!hasContent)
+                    .help(isRunning ? "Add to queue" : "Send the message")
                 }
             }
             .padding(.horizontal, Theme.Metrics.contentPadding)
@@ -131,9 +132,12 @@ public struct ComposerView: View {
         .onAppear { focused = true }
     }
 
+    private var hasContent: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !drafts.isEmpty
+    }
+
     private func send() {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isRunning else { return }
+        guard hasContent else { return }
         onSend()
     }
 }

@@ -96,6 +96,9 @@ struct ChatSessionTests {
         let sent = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "prompt.submit" })
         #expect(sent["params"]?["session_id"]?.stringValue == "live-1")
         #expect(sent["params"]?["text"]?.stringValue == "Привет")
+        // Even an apparently idle chat can become busy between its snapshot and this request.
+        #expect(sent["params"]?["queued"]?.boolValue == true)
+        #expect(sent["params"]?["submission_id"]?.stringValue?.isEmpty == false)
         let sentFrame: JSONValue = ["jsonrpc": "2.0", "id": sent["id"] ?? "x", "result": [:]]
         socket.push(sentFrame.encodedString)
         try await sending
@@ -415,9 +418,12 @@ struct NewChatTests {
         #expect(request["params"]?["source"]?.stringValue == "macos")
         #expect(request["params"]?["close_on_disconnect"]?.boolValue == false)
 
-        let answer: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": ["session_id": "live-new"]]
+        let answer: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": [
+            "session_id": "live-new", "stored_session_id": "stored-new"
+        ]]
         socket.push(answer.encodedString)
         #expect(try await creating == "live-new")
+        #expect(await chat.storedIdentity() == "stored-new")
 
         // The new session takes prompts at once.
         async let sending = chat.submit("Привет")
