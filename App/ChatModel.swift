@@ -20,6 +20,21 @@ final class ChatModel {
     /// The push of this dashboard, with the topic and keys it needs.
     let push: PushModel
     private var chat: ChatSession?
+    private struct FollowUp {
+        let text: String
+        let files: [AttachmentDraft]
+        var preview: String { text.isEmpty ? files.map(\.name).joined(separator: ", ") : text }
+    }
+    private enum QueueKey: Hashable { case stored(String), draft(UUID) }
+    private var draftQueueID = UUID()
+    private var followUps: [QueueKey: [FollowUp]] = [:]
+    private var unconfirmed: [QueueKey: [FollowUp]] = [:]
+    private var idleForQueue = false
+    private var submitting: Set<QueueKey> = []
+    private var stopping: Set<QueueKey> = []
+    private var queueKey: QueueKey { selection.map(QueueKey.stored) ?? .draft(draftQueueID) }
+    var queuedMessages: [String] { (followUps[queueKey] ?? []).map(\.preview) }
+    var unconfirmedMessages: [String] { (unconfirmed[queueKey] ?? []).map(\.preview) }
 
     private(set) var sessions: [SessionSummary] = []
     private(set) var sessionsState: Loading = .loading
@@ -136,11 +151,14 @@ final class ChatModel {
         let wasRunning = running
         if let payload = try? await session.messagesPayload(sessionID: selection) {
             cache.write(payload, name: ChatCache.transcriptName(chat: selection))
+            guard self.chat === chat, self.selection == selection else { return }
             items = Transcript.items(from: StoredMessage.page(payload))
             transcriptState = .ready
         }
         guard let joined = try? await chat.rejoin() else { return }
+        guard self.chat === chat, self.selection == selection else { return }
         running = joined.running
+        idleForQueue = !joined.running
         if joined.running {
             items = LiveTurn.resume(items, streamed: joined.streamed)
         } else if wasRunning {
@@ -148,6 +166,7 @@ final class ChatModel {
             // still open on screen is closed rather than left streaming for good.
             items = LiveTurn.close(items, interrupted: false)
         }
+        await drainFollowUps()
     }
 
     /// What the person is writing.
@@ -264,6 +283,7 @@ final class ChatModel {
     }
 
     func open(_ id: String) async {
+        guard canLeaveUnstoredQueue else { return }
         let previousID = selection
         let previousChat = chat
         let previousRunning = running
@@ -274,6 +294,7 @@ final class ChatModel {
         sendError = nil
         question = nil
         running = false
+        idleForQueue = false
         chat = nil
 
         // What was read last time, before anything is awaited: the chat is on screen in the same turn
@@ -300,10 +321,12 @@ final class ChatModel {
             let started = Date()
             let payload = try await session.messagesPayload(sessionID: id)
             cache.write(payload, name: ChatCache.transcriptName(chat: id))
+            guard selection == id else { return }
             items = Transcript.items(from: StoredMessage.page(payload))
             transcriptState = .ready
             Log.app.debug("chat \(id.prefix(12), privacy: .public): read from the dashboard in \(Int(Date().timeIntervalSince(started) * 1000)) ms")
         } catch {
+            guard selection == id else { return }
             if items.isEmpty {
                 transcriptState = .failed(ErrorMessage.of(error))
                 return
@@ -325,7 +348,9 @@ final class ChatModel {
         do {
             let joined = try await chat.join(storedID: id)
             await wire(chat)
+            guard self.chat === chat else { return }
             running = joined.running
+            idleForQueue = !joined.running
             // The live session knows the model it answers on better than the stored row does: a chat
             // started on another model than the dashboard's default is named only there.
             if let live = joined.model, !live.isEmpty {
@@ -334,6 +359,7 @@ final class ChatModel {
             if joined.running {
                 items = LiveTurn.resume(items, streamed: joined.streamed)
             }
+            await drainFollowUps()
         } catch {
             // A chat that cannot join is still readable; sending is what needs the socket.
             sendError = ErrorMessage.of(error)
@@ -362,13 +388,16 @@ final class ChatModel {
 
     /// Starts a chat that has no name yet: the dashboard names it from the first message.
     func newChat() async {
+        guard canLeaveUnstoredQueue else { return }
         let previous = chat
         let previousID = selection
+        let previousRunning = running
         chat = nil
         selection = nil
         selected = nil
         items = []
         running = false
+        idleForQueue = false
         question = nil
         status = nil
         sendError = nil
@@ -378,9 +407,10 @@ final class ChatModel {
         // The window shows the new chat at once: the session is asked for behind it, and only a
         // message waits for the answer.
         isDraft = true
+        draftQueueID = UUID()
         creatingChat = true
 
-        await release(previous, storedID: running ? previousID : nil, opening: nil)
+        await release(previous, storedID: previousRunning ? previousID : nil, opening: nil)
 
         let chat = ChatSession(gateway: gateway, hub: hub)
         self.chat = chat
@@ -424,8 +454,11 @@ final class ChatModel {
     }
 
     private func wire(_ chat: ChatSession) async {
-        await chat.setEventSink { [weak self] event in
-            Task { @MainActor in self?.apply(event) }
+        await chat.setEventSink { [weak self, weak chat] event in
+            Task { @MainActor in
+                guard let self, let chat, self.chat === chat else { return }
+                self.apply(event)
+            }
         }
         await chat.setQuestionSink { [weak self, weak chat] question in
             Task { @MainActor in
@@ -476,11 +509,46 @@ final class ChatModel {
         }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let files = drafts
-        guard !text.isEmpty || !files.isEmpty, !running, let chat else { return }
+        guard !text.isEmpty || !files.isEmpty, let chat else { return }
         draft = ""
         drafts = []
         sendError = nil
+        let key = queueKey
+        let followUp = FollowUp(text: text, files: files)
+        if running || submitting.contains(key) || stopping.contains(key) || followUps[key]?.isEmpty == false {
+            followUps[key, default: []].append(followUp)
+            await drainFollowUps()
+        } else {
+            await submit(followUp, to: chat, key: key)
+        }
+    }
 
+    private var canLeaveUnstoredQueue: Bool {
+        if selection == nil, !queuedMessages.isEmpty {
+            sendError = "Wait for the queued messages in this new chat before leaving it."
+            return false
+        }
+        return true
+    }
+
+    private func drainFollowUps() async {
+        guard idleForQueue, !running, let chat, !queuedMessages.isEmpty else { return }
+        let key = queueKey
+        guard !submitting.contains(key), !stopping.contains(key),
+              await gateway.currentState() == .ready,
+              self.chat === chat, queueKey == key, idleForQueue, !running,
+              !submitting.contains(key), !stopping.contains(key),
+              let next = followUps[key]?.first else { return }
+        followUps[key]?.removeFirst()
+        if followUps[key]?.isEmpty == true { followUps[key] = nil }
+        await submit(next, to: chat, key: key)
+    }
+
+    private func submit(_ followUp: FollowUp, to chat: ChatSession, key: QueueKey) async {
+        submitting.insert(key)
+        idleForQueue = false
+        let text = followUp.text
+        let files = followUp.files
         let shown = text.isEmpty
             ? (files.allSatisfy(\.isImage) ? "Describe the picture." : "Look at these files.")
             : text
@@ -500,9 +568,15 @@ final class ChatModel {
             let prompt = refs.isEmpty ? shown : shown + "\n" + refs.joined(separator: "\n")
             try await chat.submit(prompt)
         } catch {
-            running = false
-            sendError = ErrorMessage.of(error)
+            unconfirmed[key, default: []].append(followUp)
+            if self.chat === chat {
+                running = false
+                idleForQueue = false
+                sendError = "Delivery not confirmed: \(ErrorMessage.of(error))"
+            }
         }
+        submitting.remove(key)
+        if self.chat === chat { await drainFollowUps() }
     }
 
     /// The chat that asked the question on screen: it need not be the one the window shows.
@@ -574,9 +648,16 @@ final class ChatModel {
 
     func stop() async {
         guard let chat else { return }
+        let key = queueKey
+        guard stopping.insert(key).inserted else { return }
+        idleForQueue = false
         try? await chat.interrupt()
-        items = LiveTurn.close(items, interrupted: true)
-        running = false
+        stopping.remove(key)
+        if self.chat === chat {
+            items = LiveTurn.close(items, interrupted: true)
+            running = false
+            await drainFollowUps()
+        }
     }
 
     private func apply(_ event: GatewayEvent) {
@@ -584,6 +665,7 @@ final class ChatModel {
         switch event.type {
         case "message.start":
             running = true
+            idleForQueue = false
             status = nil
         case "status.update":
             status = event.payload["text"]?.stringValue
@@ -595,14 +677,22 @@ final class ChatModel {
             sendError = event.payload["message"]?.stringValue
         case "message.complete":
             running = false
+            idleForQueue = true
             status = nil
         default:
             break
         }
         items = LiveTurn.apply(event, to: items)
 
-        if event.type == "message.complete", wasRunning, isDraft {
-            Task { await self.adoptDraft() }
+        if event.type == "message.complete", let owner = chat {
+            Task {
+                guard self.chat === owner else { return }
+                await self.drainFollowUps()
+                if self.chat === owner, wasRunning, self.isDraft, !self.running,
+                   self.queuedMessages.isEmpty, !self.submitting.contains(self.queueKey) {
+                    await self.adoptDraft()
+                }
+            }
         }
 
         // A session this window does not hold, or a platform that started one: the list has news.
@@ -811,6 +901,8 @@ final class ChatModel {
                 transcriptState = .ready
             }
             try await administrator().delete(storedID: summary.id)
+            followUps[.stored(summary.id)] = nil
+            unconfirmed[.stored(summary.id)] = nil
             await load()
         } catch {
             sendError = ErrorMessage.of(error)

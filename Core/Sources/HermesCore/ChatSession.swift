@@ -183,7 +183,9 @@ public actor ChatSession {
         guard let liveID else { throw ChatError.notConnected }
         _ = try await gateway.call("prompt.submit", params: [
             "session_id": .string(liveID),
-            "text": .string(text)
+            "text": .string(text),
+            "queued": true,
+            "submission_id": .string(UUID().uuidString)
         ])
     }
 
