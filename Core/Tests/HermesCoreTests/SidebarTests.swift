@@ -75,4 +75,150 @@ struct SidebarTests {
         #expect(pinned.id == chat.id)
         #expect(pinned.title == chat.title)
     }
+
+    // MARK: - The runs of one cron job
+
+    private func run(
+        _ id: String, title: String, at: Date, source: String = "cron", unread: Bool = false
+    ) -> SessionSummary {
+        SessionSummary(id: id, title: title, source: source, lastActive: at, unread: unread)
+    }
+
+    @Test("Three runs of one job read as one row led by the newest")
+    func foldedJob() {
+        let now = day(2026, 11, 1)
+        let rows = Sidebar.sections(
+            [
+                run("r1", title: "nightly · Nov 01 06:00", at: day(2026, 11, 1, 6)),
+                run("r3", title: "nightly · Nov 01 18:00", at: day(2026, 11, 1, 18)),
+                run("r2", title: "nightly · Nov 01 12:00", at: day(2026, 11, 1, 12))
+            ],
+            now: now, calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.count == 1)
+        #expect(rows.first?.chat.id == "r3")
+        #expect(rows.first?.runs.map(\.id) == ["r2", "r1"])
+        #expect(rows.first?.count == 3)
+        #expect(rows.first?.folded == true)
+        #expect(rows.first?.label == "nightly")
+    }
+
+    @Test("A job with one run is an ordinary row")
+    func singleRun() {
+        let rows = Sidebar.sections(
+            [run("r1", title: "nightly · Nov 01 06:00", at: day(2026, 11, 1, 6))],
+            now: day(2026, 11, 1), calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.count == 1)
+        #expect(rows.first?.folded == false)
+        #expect(rows.first?.count == 1)
+        #expect(rows.first?.label == "nightly · Nov 01 06:00")
+    }
+
+    @Test("Runs on either side of a date heading stay apart")
+    func dayBoundary() {
+        let sections = Sidebar.sections(
+            [
+                run("today", title: "nightly · Nov 01 06:00", at: day(2026, 11, 1, 6)),
+                run("yesterday", title: "nightly · Oct 31 23:00", at: day(2026, 10, 31, 23))
+            ],
+            now: day(2026, 11, 1), calendar: calendar
+        )
+
+        #expect(sections.map(\.group) == [.today, .yesterday])
+        #expect(sections.allSatisfy { $0.rows.allSatisfy { !$0.folded } })
+    }
+
+    @Test("A chat of another source is never folded")
+    func otherSource() {
+        let rows = Sidebar.sections(
+            [
+                run("t2", title: "nightly · Nov 01 12:00", at: day(2026, 11, 1, 12), source: "telegram"),
+                run("t1", title: "nightly · Nov 01 06:00", at: day(2026, 11, 1, 6), source: "telegram")
+            ],
+            now: day(2026, 11, 1), calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.map(\.chat.id) == ["t2", "t1"])
+        #expect(rows.allSatisfy { !$0.folded })
+    }
+
+    @Test("A run renamed by hand stays its own row")
+    func renamedRun() {
+        let rows = Sidebar.sections(
+            [
+                run("renamed", title: "nightly", at: day(2026, 11, 1, 18)),
+                run("r2", title: "nightly · Nov 01 12:00", at: day(2026, 11, 1, 12)),
+                run("r1", title: "nightly · Nov 01 06:00", at: day(2026, 11, 1, 6))
+            ],
+            now: day(2026, 11, 1), calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.map(\.chat.id) == ["renamed", "r2"])
+        #expect(rows.map(\.count) == [1, 2])
+    }
+
+    @Test("The fallback titles of one job fold together")
+    func fallbackTitles() {
+        let rows = Sidebar.sections(
+            [
+                run("other", title: "cron 0f0f0f0f0f0f 9f8e7d", at: day(2026, 11, 1, 18)),
+                run("r2", title: "cron 1a2b3c4d5e6f 9f8e7d", at: day(2026, 11, 1, 12)),
+                run("r1", title: "cron 1a2b3c4d5e6f", at: day(2026, 11, 1, 6))
+            ],
+            now: day(2026, 11, 1), calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.map(\.chat.id) == ["other", "r2"])
+        #expect(rows.map(\.count) == [1, 2])
+        #expect(Sidebar.cronJobKey(run("r2", title: "cron 1a2b3c4d5e6f 9f8e7d", at: day(2026, 11, 1))) == "cron 1a2b3c4d5e6f")
+    }
+
+    @Test("Jobs whose names share a prefix stay apart")
+    func sharedPrefix() {
+        let rows = Sidebar.sections(
+            [
+                run("b", title: "nightly-report · Nov 01 12:00", at: day(2026, 11, 1, 12)),
+                run("a", title: "nightly · Nov 01 06:00", at: day(2026, 11, 1, 6))
+            ],
+            now: day(2026, 11, 1), calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.map(\.chat.id) == ["b", "a"])
+        #expect(rows.allSatisfy { !$0.folded })
+    }
+
+    @Test("A month printed in another language still folds")
+    func localizedMonth() {
+        let rows = Sidebar.sections(
+            [
+                run("r2", title: "nightly · ноя 01 12:00", at: day(2026, 11, 1, 12)),
+                run("r1", title: "nightly · ноя 01 06:00", at: day(2026, 11, 1, 6))
+            ],
+            now: day(2026, 11, 1), calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.count == 1)
+        #expect(rows.first?.count == 2)
+    }
+
+    @Test("A title that is only a stamp names no job")
+    func stampOnly() {
+        #expect(Sidebar.cronJobKey(run("x", title: " · Nov 01 06:00", at: day(2026, 11, 1))) == nil)
+    }
+
+    @Test("An unread run marks the folded row unread")
+    func unreadRun() {
+        let rows = Sidebar.sections(
+            [
+                run("r2", title: "nightly · Nov 01 12:00", at: day(2026, 11, 1, 12)),
+                run("r1", title: "nightly · Nov 01 06:00", at: day(2026, 11, 1, 6), unread: true)
+            ],
+            now: day(2026, 11, 1), calendar: calendar
+        ).first?.rows ?? []
+
+        #expect(rows.first?.unread == true)
+    }
 }
