@@ -418,9 +418,12 @@ struct NewChatTests {
         #expect(request["params"]?["source"]?.stringValue == "macos")
         #expect(request["params"]?["close_on_disconnect"]?.boolValue == false)
 
-        let answer: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": ["session_id": "live-new"]]
+        let answer: JSONValue = ["jsonrpc": "2.0", "id": request["id"] ?? "x", "result": [
+            "session_id": "live-new", "stored_session_id": "stored-new"
+        ]]
         socket.push(answer.encodedString)
         #expect(try await creating == "live-new")
+        #expect(await chat.storedIdentity() == "stored-new")
 
         // The new session takes prompts at once.
         async let sending = chat.submit("Привет")

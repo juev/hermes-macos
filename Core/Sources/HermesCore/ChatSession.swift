@@ -173,10 +173,13 @@ public actor ChatSession {
         guard let live = answer["session_id"]?.scalarString, !live.isEmpty else {
             throw ChatError.noLiveSession
         }
+        storedID = answer["stored_session_id"]?.scalarString ?? answer["session_key"]?.scalarString
         liveID = live
         await listen()
         return live
     }
+
+    public func storedIdentity() -> String? { storedID }
 
     /// Sends a prompt into the live session.
     public func submit(_ text: String) async throws {

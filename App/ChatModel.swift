@@ -27,12 +27,13 @@ final class ChatModel {
     }
     private enum QueueKey: Hashable { case stored(String), draft(UUID) }
     private var draftQueueID = UUID()
+    private var draftStoredID: String?
     private var followUps: [QueueKey: [FollowUp]] = [:]
     private var unconfirmed: [QueueKey: [FollowUp]] = [:]
     private var idleForQueue = false
     private var submitting: Set<QueueKey> = []
     private var stopping: Set<QueueKey> = []
-    private var queueKey: QueueKey { selection.map(QueueKey.stored) ?? .draft(draftQueueID) }
+    private var queueKey: QueueKey { (selection ?? draftStoredID).map(QueueKey.stored) ?? .draft(draftQueueID) }
     var queuedMessages: [String] { (followUps[queueKey] ?? []).map(\.preview) }
     var unconfirmedMessages: [String] { (unconfirmed[queueKey] ?? []).map(\.preview) }
 
@@ -147,16 +148,16 @@ final class ChatModel {
             }
         }
 
-        guard let selection, !isDraft, let chat else { return }
+        guard let selection = selection ?? draftStoredID, let chat, !isDraft || running || !queuedMessages.isEmpty else { return }
         let wasRunning = running
         if let payload = try? await session.messagesPayload(sessionID: selection) {
             cache.write(payload, name: ChatCache.transcriptName(chat: selection))
-            guard self.chat === chat, self.selection == selection else { return }
+            guard self.chat === chat, (self.selection ?? draftStoredID) == selection else { return }
             items = Transcript.items(from: StoredMessage.page(payload))
             transcriptState = .ready
         }
         guard let joined = try? await chat.rejoin() else { return }
-        guard self.chat === chat, self.selection == selection else { return }
+        guard self.chat === chat, (self.selection ?? draftStoredID) == selection else { return }
         running = joined.running
         idleForQueue = !joined.running
         if joined.running {
@@ -284,11 +285,14 @@ final class ChatModel {
 
     func open(_ id: String) async {
         guard canLeaveUnstoredQueue else { return }
-        let previousID = selection
+        let previousID = selection ?? draftStoredID
         let previousChat = chat
         let previousRunning = running
 
         selection = id
+        isDraft = false
+        creatingChat = false
+        draftStoredID = nil
         selected = sessions.first { $0.id == id }
         status = nil
         sendError = nil
@@ -390,7 +394,7 @@ final class ChatModel {
     func newChat() async {
         guard canLeaveUnstoredQueue else { return }
         let previous = chat
-        let previousID = selection
+        let previousID = selection ?? draftStoredID
         let previousRunning = running
         chat = nil
         selection = nil
@@ -408,16 +412,23 @@ final class ChatModel {
         // message waits for the answer.
         isDraft = true
         draftQueueID = UUID()
+        let openingDraft = draftQueueID
+        draftStoredID = nil
         creatingChat = true
 
         await release(previous, storedID: previousRunning ? previousID : nil, opening: nil)
+        guard isDraft, draftQueueID == openingDraft else { return }
 
         let chat = ChatSession(gateway: gateway, hub: hub)
         self.chat = chat
         await wire(chat)
         do {
             try await chat.create()
+            let stored = await chat.storedIdentity()
+            guard self.chat === chat else { return }
+            draftStoredID = stored
         } catch {
+            guard self.chat === chat else { return }
             isDraft = false
             sendError = ErrorMessage.of(error)
         }
@@ -435,7 +446,13 @@ final class ChatModel {
         let picked = pickedDraftModel
         isDraft = false
         pickedDraftModel = nil
-        await load()
+        if let stored = draftStoredID {
+            selection = stored
+            draftStoredID = nil
+            await refreshSessions()
+        } else {
+            await load()
+        }
         if let picked, let selection, chatModels[selection] == nil {
             chatModels[selection] = picked
         }
@@ -524,7 +541,7 @@ final class ChatModel {
     }
 
     private var canLeaveUnstoredQueue: Bool {
-        if selection == nil, !queuedMessages.isEmpty {
+        if selection == nil, draftStoredID == nil, !queuedMessages.isEmpty {
             sendError = "Wait for the queued messages in this new chat before leaving it."
             return false
         }
