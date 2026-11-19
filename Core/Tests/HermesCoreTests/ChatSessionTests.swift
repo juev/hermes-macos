@@ -96,6 +96,9 @@ struct ChatSessionTests {
         let sent = try #require(socket.sentFrames.last { $0["method"]?.stringValue == "prompt.submit" })
         #expect(sent["params"]?["session_id"]?.stringValue == "live-1")
         #expect(sent["params"]?["text"]?.stringValue == "Привет")
+        // Even an apparently idle chat can become busy between its snapshot and this request.
+        #expect(sent["params"]?["queued"]?.boolValue == true)
+        #expect(sent["params"]?["submission_id"]?.stringValue?.isEmpty == false)
         let sentFrame: JSONValue = ["jsonrpc": "2.0", "id": sent["id"] ?? "x", "result": [:]]
         socket.push(sentFrame.encodedString)
         try await sending
